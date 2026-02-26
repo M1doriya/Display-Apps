@@ -1,0 +1,1101 @@
+KREDIT LAB - FINANCIAL ANALYSIS FRAMEWORK v7.9
+==================================================
+Single authoritative reference. Output JSON ONLY. Streamlit handles HTML.
+
+CHANGELOG v7.9 (from v7.8):
+- Section 0: Added mandatory Phase 3.5 - VALIDATE NARRATIVES. After assembling
+  narratives, run a validation script that cross-checks every number, percentage,
+  ratio, and directional word in narrative strings against actual computed values.
+  Fail on any mismatch. Fix and re-run Phase 3 before delivery.
+- Section 0: Added NARRATIVE CONSTRUCTION RULE to Phase 3. ALL narratives MUST be
+  built using f-strings/variables referencing Phase 2 computed values. NEVER
+  hardcode numbers or directional words (rose/fell/improved/declined) without
+  deriving them from the actual data. This prevents narrative-vs-data mismatches.
+- Section 12: JSON schema version updated to v7.9.
+
+CHANGELOG v7.8 (from v7.7):
+- Section 0: Added mandatory Phase 0 - MAP. Before any coding, read ALL source
+  documents and notes cover to cover. Produce a Source Mapping Table that
+  documents what the source shows for each P&L and BS section. The mapping
+  mirrors the source Ã¢â‚¬â€ no assumptions, no restructuring, no shortcuts.
+  Phase 1 CANNOT begin until Phase 0 is complete.
+- Section 0: Added NOTE READING MANDATE. Every financial note referenced in
+  the face of the financial statements MUST be read and its detail extracted
+  where it provides line item breakdowns. Skipping notes is a framework violation.
+- Section 3: Strengthened line item extraction rules with explicit note-reading
+  requirements for P&L (Note for revenue, Note for profit from operations,
+  Note for finance costs, Note for taxation) and BS (Note for receivables,
+  Note for payables, Note for borrowings, Note for cash).
+- Section 3: Added DISCLOSURE NOTE vs DIRECT BREAKDOWN distinction. Note 17
+  (Profit from Operations) is a disclosure note Ã¢â‚¬â€ items are charges/credits
+  included WITHIN admin expenses and cost of sales. They are NOT a direct
+  breakdown of admin expenses. The face P&L structure dictates classification.
+- Section 8: Cash ratio Ã¢â‚¬â€ when BS lumps cash and FD together, use the note
+  breakdown to identify unrestricted cash only.
+- Section 12: JSON schema updated to v7.8.
+
+CHANGELOG v7.7 (from v7.6):
+- Section 2: Added RESTATED PERIODS rules. If source presents any comparative
+  period as "Restated", the label MUST include it (e.g. "FY Dec 2023 (Audited - Restated)").
+  Prior year adjustments must be extracted from notes, added to company_info as
+  "prior_year_adjustments" object, and flagged in areas_of_concern if material.
+- Section 11: Added prior_year_adjustments to audit/company info requirements.
+- Section 12: JSON schema updated to v7.7 - added prior_year_adjustments to company_info.
+
+CHANGELOG v7.6 (from v7.5):
+- Section 4: WCR formula corrected. Single WCR per period using CCC(adj).
+  Formula: CCC(adj) x Revenue / Period Days.
+  Denominator MUST match the revenue period (365/366 for FY, actual days for YTD).
+  Revenue is ALWAYS actual period figure. NEVER annualise YTD revenue.
+  Removed dual values_standard/values_period_adjusted - single "values" field only.
+- Section 10: facility_suitability_summary updated to single wcr_amount field.
+- Section 12: JSON schema updated to v7.6 - WCR uses single "values" field.
+
+CHANGELOG v7.5 (from v7.1.2):
+- Section 8: Period-adjusted efficiency ratios apply ONLY to MA/YTD periods.
+  For audited FY periods, values_period_adjusted MUST equal values_standard.
+  Do NOT compute separate adjusted figures for audited full-year periods.
+- Section 12: financial_year_end must include day and month (e.g. "31 December",
+  "30 June"). Never month alone.
+
+CHANGELOG v7.1.2 (from v7.1.1):
+- Section 2: Period days must use ACTUAL calendar day count (not rounded conventions)
+- Section 8: Cash ratio clarified - use cash_and_bank ONLY (exclude deposits/FD)
+- Section 12: BS line item extraction rule - mirror source document structure exactly
+
+CHANGELOG v7.1.1 (from v7.1):
+- Section 2: Added period days calculation rule (internal only, not displayed)
+- Section 4: Updated WCR to support dual calculation (standard + period-adjusted)
+- Section 8: Added dual-method efficiency ratios with backward-compatible "values" field
+- Section 10: Updated severity guide for period-adjusted days
+- Section 12: Updated JSON schema to v7.3 structure (efficiency_ratios, WCR, facility suitability)
+
+================================================================================
+0. BUILD METHOD (MANDATORY - READ FIRST)
+================================================================================
+
+NEVER output JSON directly in chat. The complete JSON exceeds chat streaming
+limits and WILL crash. Always build as a file using Python scripts.
+
+EXECUTION SEQUENCE:
+
+  Phase 0 - MAP (MANDATORY - Before any coding):
+
+    PURPOSE: Read ALL source documents and financial notes cover to cover.
+    Produce a Source Mapping Table that documents what the source ALREADY shows.
+    This is a DOCUMENTATION exercise, not an interpretation exercise.
+    The source dictates the structure. You mirror it. No assumptions.
+
+    STEP 1 Ã¢â‚¬â€ Read everything first.
+      Read every page of every uploaded document before writing any code.
+      This includes: Directors' Report, Auditors' Report, face of financial
+      statements (P&L, BS, Changes in Equity, Cash Flow), and ALL notes to
+      the financial statements. No exceptions. No skimming.
+
+    STEP 2 Ã¢â‚¬â€ Identify analysis basis.
+      Determine: Company Standalone or Group Consolidated.
+      Document which columns from the source are being used.
+      All subsequent extraction uses ONLY the identified column set.
+
+    STEP 3 Ã¢â‚¬â€ Produce the Source Mapping Table.
+      For EACH section below, document what the source and its notes show.
+      State the note number, the line items found, and the values per period.
+      If a note provides no further breakdown, state: "No breakdown in notes."
+      If a note provides breakdown, list every line item the note shows.
+
+      The mapping MUST cover:
+
+      A. REVENUE
+         - Face of P&L: total revenue per period.
+         - Note (e.g. Note 16): line item breakdown of revenue.
+         - List each line item as the source names it, with values.
+
+      B. COST OF SALES
+         - Face of P&L: total cost of sales per period.
+         - Notes: does any note break down cost of sales?
+         - If no breakdown: state "Single line per source."
+
+      C. OTHER INCOME
+         - Face of P&L: total other income per period.
+         - Note for Profit from Operations (e.g. Note 17): what credits are
+           disclosed? These are the line items that COMPOSE other income.
+         - List each credit item. Check: do they sum to the face total?
+           If yes Ã¢â€ â€™ use as line items.
+           If no Ã¢â€ â€™ identify the gap, label remainder as "Other miscellaneous
+           income" with the balancing amount. Do NOT assume what it contains.
+
+      D. ADMINISTRATIVE EXPENSES
+         - Face of P&L: total admin expenses per period.
+         - IMPORTANT: Note 17 (Profit from Operations) is a DISCLOSURE note.
+           It shows items that are CHARGED within the P&L, but it does NOT
+           directly break down admin expenses. Many items disclosed in Note 17
+           (e.g. depreciation, employee costs, hire of plant) may sit in
+           COST OF SALES, not admin expenses.
+         - RULE: If the source does NOT provide a direct breakdown of admin
+           expenses (i.e. no separate admin expense note), extract admin
+           expenses as a single line matching the face total.
+           Do NOT reconstruct a breakdown from Note 17 charges Ã¢â‚¬â€ that would
+           be assumption, not source mirroring.
+         - If the source DOES provide a direct admin expense breakdown note,
+           use that note's line items.
+
+      E. FINANCE COSTS
+         - Face of P&L: total finance costs per period.
+         - Note (e.g. Note 18): line item breakdown.
+         - List each item. Verify sum = face total.
+
+      F. TAXATION
+         - Face of P&L: total taxation per period.
+         - Note (e.g. Note 19): breakdown (current year, over/under provision).
+         - List each item. Verify sum = face total.
+
+      G. DEPRECIATION (for EBITDA)
+         - Note 17 or separate depreciation note: what depreciation amounts
+           are disclosed for the IDENTIFIED column set (Company or Group)?
+         - PPE depreciation + Investment property depreciation = total.
+         - EBITDA = Operating Profit + total depreciation from source.
+         - If source does not charge depreciation (common in MA): addback = 0.
+
+      H. NON-CURRENT ASSETS
+         - Face of BS: line items and totals.
+         - PPE note (e.g. Note 5): line item breakdown with net carrying amounts.
+         - Investment properties note (e.g. Note 6): breakdown if available.
+         - List all NCA line items as source presents them.
+
+      I. CURRENT ASSETS
+         - Face of BS: line items and totals.
+         - Trade receivables note (e.g. Note 9): CRITICAL Ã¢â‚¬â€ this note typically
+           breaks trade receivables into third parties, contract customers,
+           retention sums, amounts due from related parties.
+           Extract EVERY line item the note shows.
+         - Other receivables: note breakdown if available.
+         - Cash note (e.g. Note 20): breakdown of cash on hand vs fixed deposits.
+           Identify which portion is pledged/restricted.
+         - List all CA line items as source presents them.
+
+      J. EQUITY
+         - Face of BS: share capital, retained earnings, other reserves.
+         - Changes in equity statement: verify opening/closing balances.
+
+      K. NON-CURRENT LIABILITIES
+         - Face of BS: line items and totals.
+         - Borrowings note (e.g. Note 14): breakdown by facility type
+           (finance lease, term loan) with current/non-current split.
+
+      L. CURRENT LIABILITIES
+         - Face of BS: line items and totals.
+         - Trade payables note (e.g. Note 15): CRITICAL Ã¢â‚¬â€ breaks down into
+           third parties, retention sums, amounts due to subsidiaries/related.
+         - Other payables: note breakdown (other payables, deposits received,
+           accruals, amounts due to directors).
+         - Borrowings (current): from Note 14 Ã¢â‚¬â€ finance lease, term loan,
+           overdraft, bankers' acceptance.
+         - List all CL line items as source presents them.
+
+      M. RELATED PARTY
+         - Note for related party disclosures: transactions and balances.
+         - Amounts due from/to directors, shareholders, subsidiaries, related.
+         - These feed into TNW adjustments and related_party_exposure observation.
+
+    STEP 4 Ã¢â‚¬â€ Present the mapping in chat.
+      Output the Source Mapping Table in chat for verification before coding.
+      This is a checkpoint. If the mapping is wrong, the entire analysis will
+      be wrong. Better to catch it here than after 3 phases of coding.
+
+    STEP 5 Ã¢â‚¬â€ Only after mapping is complete, proceed to Phase 1.
+
+    WHY THIS PHASE EXISTS:
+      Without Phase 0, the natural tendency is to skim the face of the
+      financial statements, extract single-line totals, skip note detail,
+      and produce a superficial analysis. Phase 0 forces thorough reading
+      and ensures every line item the source provides is captured.
+      The source is truth. The mapping documents that truth. The code
+      then faithfully reproduces it.
+
+  Phase 1 - EXTRACT: Using the Source Mapping Table from Phase 0, write
+            Python script to build core financials (P&L, BS, line items).
+            Every line item in the script must trace back to the mapping.
+            Execute and verify: every BS must balance (TA = E+L, variance = 0).
+            Verify: sum of line items = section total for every section.
+            Save intermediate dict as .json in /home/claude/.
+
+  Phase 2 - ANALYSE: Write Python script that loads Phase 1 output and adds:
+            Financial ratios (all 20+), working capital (OWC, CCC, WCR),
+            DSCR with facility classification, funding mismatch, TNW.
+            Execute and verify: spot-check 3-5 ratios manually.
+            Save intermediate dict as .json in /home/claude/.
+
+  Phase 3 - ASSEMBLE: Write Python script that loads Phase 2 output and adds:
+            All narratives/assessments, key observations, positive indicators,
+            areas of concern, recommendations, facility suitability summary,
+            company info, audit opinion, report footer.
+            Execute. Run final integrity checks (BS balance, schema completeness).
+            Save final JSON to /mnt/user-data/outputs/[company]_kreditlab_v7_9.json.
+
+            NARRATIVE CONSTRUCTION RULE (MANDATORY):
+              ALL narrative and assessment strings MUST be built using f-strings
+              or string formatting that references the actual computed variables
+              from Phase 2 output. Examples:
+
+              CORRECT:
+                dscr_val = calc["fy2024"]["dscr"]
+                if dscr_val < 1.0:
+                    assessment = f"DSCR of {dscr_val}x is critically below 1.25x benchmark..."
+                elif dscr_val < 1.25:
+                    assessment = f"DSCR of {dscr_val}x is below the 1.25x benchmark..."
+
+              WRONG:
+                assessment = "DSCR comfortably exceeds the 1.25x benchmark..."
+                (hardcoded directional word without checking the actual value)
+
+              This applies to ALL narratives: key_observations, areas_of_concern,
+              DSCR assessment, WCA rationale, TNW notes, funding mismatch, and
+              facility suitability. Every number cited must come from a variable.
+              Every directional word (rose/fell/improved/declined/exceeded/below)
+              must be derived from comparing actual values, not assumed.
+
+  Phase 3.5 - VALIDATE NARRATIVES (MANDATORY):
+            Write a Python script that loads the Phase 3 JSON and validates:
+
+            1. DIRECTIONAL WORD CHECKS:
+               - DSCR < 1.0 → narrative MUST NOT contain "adequate", "comfortable",
+                 "comfortably", "exceeds benchmark", "sufficient"
+               - DSCR < 1.0 → narrative MUST contain "insufficient", "below", or
+                 "critically"
+               - DSCR >= 1.25 → narrative MUST NOT contain "insufficient", "inadequate"
+               - If a ratio DECREASED period-over-period → narrative for that ratio
+                 MUST NOT say "rose", "increased", "improved" (unless describing
+                 a ratio where lower = better, e.g. gearing declining)
+               - If a ratio INCREASED period-over-period → narrative MUST NOT say
+                 "fell", "declined", "reduced"
+
+            2. NUMBER VERIFICATION:
+               - Extract all RM amounts from narrative strings
+               - Compare against JSON computed values (tolerance ±1% for rounding)
+               - Extract all percentages and ratios from narrative strings
+               - Compare against JSON computed values
+               - FAIL on any mismatch exceeding tolerance
+
+            3. BENCHMARK CONSISTENCY:
+               - Current ratio cited as ">= 1.25x" → if value < 1.25, narrative
+                 must flag it as below benchmark
+               - L/E cited as "<= 4.0x" → if value > 4.0, narrative must flag it
+               - DSCR cited as ">= 1.25x" → if value < 1.25, narrative must flag it
+
+            If ANY validation fails: print the specific failure, fix the narrative
+            in Phase 3, and re-run Phase 3 + Phase 3.5 until clean.
+            Phase 4 CANNOT proceed until Phase 3.5 passes with zero failures.
+
+  Phase 4 - DELIVER: Present file to user using present_files tool.
+            Give brief summary of key findings in chat (NOT the JSON).
+
+RULES:
+  - Phase 0 is MANDATORY. Do NOT skip it. Do NOT combine it with Phase 1.
+  - Each phase: one Python script, execute, verify before moving to next phase.
+  - If any phase fails: fix and re-run that phase. Do not skip verification.
+  - Chat response after delivery: concise summary only (revenue trend, key
+    flags, DSCR, facility assessment). Never paste JSON content in chat.
+  - Source documents may be .txt, .pdf, or image. Read all before Phase 0.
+
+================================================================================
+1. CORE RULES
+================================================================================
+
+- Verify every number against source. Read financial notes.
+- Source is truth: mirror actual names, periods, line items from source documents.
+- NEVER assume, estimate, impute, or restructure. If the source does not show
+  it, do not create it. If the source shows it, extract it exactly.
+- JSON structure must match schema (Section 12) exactly.
+- Extract ALL available periods (target 3 years). Audit reports have prior year comparatives.
+- Every total must be provable: sum line items = section total. EXACTLY. No rounding adjustments.
+- Every analytical section must have its narrative (no empty assessments).
+- All numeric fields: actual numbers or 0. Never strings like "N/A".
+- All ratios: must include "formula" and "unit" fields.
+- EBITDA depreciation addback: source value ONLY. If source does not charge
+  depreciation (common in MA), addback = 0 and EBITDA = Operating Profit.
+  Never estimate or impute depreciation from other periods or BS movements.
+- Output efficiency: numbers + single assessment per section. No redundant per-period narratives.
+
+NOTE READING MANDATE:
+  Every note referenced in the face of the financial statements MUST be read.
+  If the face shows "Trade and other receivables (Note 9)" Ã¢â‚¬â€ you MUST read
+  Note 9 and extract its line item detail.
+  If the face shows "Borrowings (Note 14)" Ã¢â‚¬â€ you MUST read Note 14.
+  If the face shows "Revenue (Note 16)" Ã¢â‚¬â€ you MUST read Note 16.
+  Skipping notes and extracting face-level single lines when note detail
+  exists is a framework violation.
+
+================================================================================
+2. PERIOD LABELING
+================================================================================
+
+ALL labels MUST include month of period end:
+  Audited full year:  "FY Jun 2024 (Audited)"
+  MA full year:       "FY Jun 2025 (MA)"
+  MA partial year:    "YTD Mar 2025 (MA)"
+  Unaudited:          "FY Jun 2024 (Unaudited)" / "YTD Mar 2025 (Unaudited)"
+
+Period keys: fy2023, fy2024, fy2025 (full years), ytd_mar2025 (partial).
+FY vs YTD: compare MA month against company's FYE month.
+
+IMPORTANT: Do NOT include period days in the label.
+  WRONG: "YTD Mar 2025 (MA) - 180 days"
+  RIGHT: "YTD Mar 2025 (MA)"
+Period days is for internal calculation only, not for display.
+
+RESTATED PERIODS:
+  If ANY comparative period in the source is presented as "Restated":
+  1. LABEL: Period label MUST include "Restated":
+       "FY Dec 2023 (Audited - Restated)"
+     This is non-negotiable. The label mirrors the source presentation.
+  2. EXTRACT: Read the prior year adjustment note (usually one of the last notes).
+     Extract WHAT was restated and the RM impact on each affected line item.
+     Add a "prior_year_adjustments" object to company_info (see Section 12).
+  3. FLAG: If the restatement is MATERIAL, add to areas_of_concern:
+     Material = any of:
+       - Affects P&L by > 5% of revenue
+       - Affects BS by > 5% of total assets
+       - Changes the sign of profit/loss
+       - Involves reclassification between current and non-current (liquidity impact)
+     Severity: MEDIUM if accounting reclassification only.
+               HIGH if it changes profitability or reveals prior misstatement.
+  4. NARRATE: Key observations (profitability_trend, debt_structure, etc.) must
+     reference the restated nature where the restatement affects that observation.
+     Example: "FY2023 finance costs of RM6.03 million (restated from RM1.24 million)
+     reflect reclassification of term loan interest from prior periods."
+  5. DSCR/RATIOS: Use the RESTATED figures for all calculations. The restated
+     figures represent the corrected position. Note in DSCR assessment if the
+     restatement materially changes the debt service picture.
+
+PERIOD DAYS FOR EFFICIENCY RATIOS (internal use only):
+  Full Year (FY): 365 days (366 for leap years if applicable)
+  YTD periods: Count ACTUAL calendar days from FYE+1 to MA end date.
+               Do NOT use rounded conventions (e.g., 6 months Ã¢â€°Â  180 or 182).
+               ALWAYS count the real days in each month of the period.
+               Example: FYE December + MA to June 2025 =
+                 Jan(31) + Feb(28) + Mar(31) + Apr(30) + May(31) + Jun(30) = 181 days
+               Example: FYE September + MA to March 2026 =
+                 Oct(31) + Nov(30) + Dec(31) + Jan(31) + Feb(28) + Mar(31) = 182 days
+               For leap years, February = 29 days.
+
+================================================================================
+3. LINE ITEM EXTRACTION
+================================================================================
+
+GOLDEN RULE: sum of line items = section total. Per period. EXACTLY.
+If mismatch: find the missing item. Never force-balance.
+
+Each period reflects THAT period's source structure. Different periods MAY have
+different line item keys (audited vs MA). Do NOT force one source's structure
+onto another.
+
+AUDITED: Extract line items as source presents them. Verify sum = total.
+  For audited accounts, the notes provide detailed breakdowns.
+  ALWAYS read the relevant note and extract line items from the note,
+  not just the face of the financial statements.
+
+MA - pick the natural level for that source:
+  a) Flat individual items --> use directly
+  b) Grouped with subtotals --> use GROUP SUBTOTALS as line items
+     Display: "Manpower (Wages, Transport, Medical, etc.)"
+     NEVER extract both group subtotal AND sub-items (double-counting)
+  c) Single total, no breakdown --> one item: "[desc] (per MA - unitemised)"
+
+Small related items may be combined (e.g., EPF+SOCSO+EIS --> "Staff Contributions").
+PPE must have line item breakdown per source/notes.
+
+DISCLOSURE NOTE vs DIRECT BREAKDOWN Ã¢â‚¬â€ CRITICAL DISTINCTION:
+
+  DISCLOSURE NOTES (e.g. Note 17 "Profit from Operations"):
+    These notes disclose items CHARGED or CREDITED within the P&L.
+    They are NOT a direct breakdown of any single P&L line.
+    Example: Note 17 may show depreciation of RM183,303. This depreciation
+    could sit in cost of sales, admin expenses, or split between both.
+    You CANNOT assume it is all admin expenses.
+
+    RULE: Do NOT use a disclosure note to reconstruct a breakdown of admin
+    expenses or any other P&L line unless the source explicitly states which
+    items belong to which P&L category.
+
+    USE disclosure notes for:
+    - Extracting depreciation amounts for EBITDA calculation
+    - Identifying other income credits (gain on disposal, interest income, etc.)
+    - Noting key charges (bad debts, impairment, directors' remuneration)
+    - Feeding into narratives and key observations
+
+    Do NOT use disclosure notes for:
+    - Breaking down admin expenses into line items (unless source confirms)
+    - Allocating charges between cost of sales and admin expenses
+    - Creating line items that the source structure does not support
+
+  DIRECT BREAKDOWN NOTES (e.g. Note 9, Note 14, Note 15, Note 16, Note 18):
+    These notes directly break down a face line item into components.
+    Example: Note 9 breaks "Trade and other receivables" into third parties,
+    contract customers, retention sums, other receivables, deposits, prepayment.
+    These ARE the line items. Extract them all.
+
+  WHEN IN DOUBT: If you are unsure whether a note provides a direct breakdown
+  or is a disclosure, ask: "Does this note's items sum to the face total?"
+  If yes Ã¢â€ â€™ direct breakdown Ã¢â€ â€™ extract all items.
+  If no Ã¢â€ â€™ disclosure Ã¢â€ â€™ use for reference only, do not reconstruct.
+
+BALANCE SHEET LINE ITEMS - SOURCE FIDELITY RULE:
+  Each line item in the JSON must correspond to a line item as presented in the
+  source document. Do NOT net, combine, or restructure source lines unless:
+    a) Combining genuinely related sub-items (e.g., multiple petty cash accounts)
+    b) The source itself presents them combined
+
+  For taxation/SST/zakat lines in the BS:
+    - If the source shows "Taxation" as a single line --> use that single value
+    - Do NOT net separate SST or zakat lines into the taxation figure
+    - Each distinct source line should map to a distinct JSON value or be
+      absorbed into its natural parent category (e.g., SST into other_payables)
+
+  This ensures the JSON faithfully reproduces what the source document shows.
+
+P&L LINE ITEM EXTRACTION Ã¢â‚¬â€ NOTE-BY-NOTE:
+
+  REVENUE: Read the revenue note. Extract each revenue stream as a line item.
+    Verify: sum of line items = face total.
+
+  COST OF SALES: If a note breaks down cost of sales, extract line items.
+    If no note breakdown exists, extract as single line per face.
+
+  OTHER INCOME: Use credits disclosed in Note 17 (or equivalent) as line items.
+    Check: do disclosed credits sum to the face "Other income" total?
+    If yes Ã¢â€ â€™ extract each credit as a line item.
+    If no Ã¢â€ â€™ extract disclosed credits + a balancing "Other income" line for the
+    difference. Label the balancing item clearly (e.g. "Other miscellaneous income").
+    NEVER assume what the balancing amount contains.
+
+  ADMINISTRATIVE EXPENSES: Extract as the source presents.
+    If source provides a direct admin expense breakdown Ã¢â€ â€™ use it.
+    If source only provides a disclosure note (Note 17) Ã¢â€ â€™ extract as SINGLE LINE
+    matching the face total. Do NOT decompose using Note 17 charges.
+
+  FINANCE COSTS: Read the finance costs note. Extract each item.
+    Verify: sum = face total.
+
+  TAXATION: Read the taxation note. Extract current/deferred/prior year items.
+    Verify: sum = face total.
+
+================================================================================
+4. WORKING CAPITAL
+================================================================================
+
+Three metrics (NOT Net Working Capital):
+
+OWC = Trade Receivables + Inventory  -  Trade Payables
+  --> SUPPORTING indicator (snapshot, can be distorted)
+  --> Negative = favorable (suppliers fund operations)
+
+CCC = Debtor Days + Inventory Days  -  Creditor Days
+  --> PRIMARY driver (uses efficiency ratios - period-adjusted for YTD)
+  --> Positive = needs financing | Negative = self-funding
+
+WCR = CCC(period-adjusted)  x  Revenue  /  Period Days
+  --> RM amount needed (positive) or surplus (negative)
+  --> Period Days = denominator matching the revenue period
+     (365/366 for audited FY, actual calendar days for YTD)
+  --> The denominator converts Revenue into a daily rate.
+     Revenue is ALWAYS the actual figure for that period (never annualised).
+  --> For audited FY: CCC(std) x FY Revenue / 365 (or 366)
+  --> For YTD:        CCC(adj) x YTD Revenue / actual period days
+  --> Single WCR value per period. The CCC(adj) already handles period
+     correction, so no separate standard/adjusted WCR is needed.
+
+  WHY THIS FORMULA:
+    The standard WCR formula is: CCC x Annual Revenue / 365
+    The /365 exists because Annual Revenue needs to be converted to a daily rate.
+    For YTD periods, Revenue covers fewer days, so the denominator must match:
+      YTD Revenue / Period Days = daily revenue rate for that period.
+    This keeps the calculation grounded in actual period activity without
+    annualising or projecting. CCC(adj) gives the real cycle in days,
+    multiplied by the real daily revenue rate = actual RM requirement.
+
+DECISION MATRIX:
+  CCC+/OWC+ --> needs_wc_facility=true  (both confirm)
+  CCC - /OWC -  --> needs_wc_facility=false (both confirm)
+  CCC+/OWC -  --> needs_wc_facility=true  (follow CCC; explain OWC distortion)
+  CCC - /OWC+ --> needs_wc_facility=false (follow CCC; explain OWC distortion)
+
+When conflict: rationale MUST explain likely distortion.
+NWC (CA - CL) is for LIQUIDITY only, not WC requirement.
+
+JSON output:
+  operating_working_capital --> values + components ONLY
+  working_capital_requirement --> values (single WCR per period, using CCC adj formula)
+  working_capital_assessment --> single rationale covering all periods (MANDATORY)
+
+================================================================================
+5. FACILITY APPROPRIATENESS
+================================================================================
+
+Answers: "Is the facility STRUCTURE right for this business?"
+
+Steps:
+1. Does company need WC facility? (CCC primary, OWC supporting)
+2. IF YES --> ~70% revolving / max ~30% term. No revolving = wrong.
+3. IF NO (self-funding) --> evaluate term facilities individually:
+   finances legitimate long-term asset? Yes=appropriate, No=inappropriate.
+
+Expected mix by nature:
+  Construction:          Mostly revolving (OD, Trade Fin, BG)
+  Manufacturing:         Mix revolving + term for machinery
+  Trading:               Mostly revolving/trade/OD
+  Professional Services: Mostly OD/RC, minimal term
+  Property Development:  Project financing + bridging
+
+Output rules:
+  - Plain banking language. Never mention percentage rules or internal logic.
+  - Do not mix DSCR/profitability into this evaluation.
+  - When appropriate=false --> MUST include existing_facility_concerns array.
+
+================================================================================
+6. DSCR ANALYSIS
+================================================================================
+
+DSCR = EBITDA / Total Debt Service
+  EBITDA = Operating Profit + Depreciation
+    Depreciation: use value from source document ONLY.
+    If source (especially MA) does NOT charge depreciation in the P&L:
+      --> Depreciation addback = 0
+      --> EBITDA = Operating Profit
+      --> Add note: "Depreciation not charged in source; EBITDA equals Operating Profit"
+    NEVER estimate or impute depreciation. Source is truth.
+  Debt Service = Term principal (current portion) + Interest (ALL facilities)
+  YTD PERIODS: Use ACTUAL period EBITDA and interest. Do NOT annualize.
+  DSCR assessment may DISCUSS annualized implications, but the calculation
+  itself must use source figures as reported for that period.
+
+Facility classification:
+  TERM (HP, Term Loan, BFI): Principal + Interest in DSCR
+  REVOLVING (OD, Trade Fin, RC): Interest ONLY in DSCR
+
+Assessment (MANDATORY): cover each period's result, 1.25x benchmark comparison,
+trend, practical implications. If DSCR < 1.0x: explicitly state insufficient.
+
+================================================================================
+7. FUNDING MISMATCH
+================================================================================
+
+Funding Gap = NCA  -  (Total Equity + NCL)
+Gap % = (Funding Gap / NCA)  x  100
+
+Severity:
+  <= 0%  --> matched          (no flag)
+  1-15% --> minor_mismatch   (optional flag, LOW)
+  16-30%--> moderate_mismatch (flag, MEDIUM)
+  > 30% --> severe_mismatch  (flag, HIGH)
+
+layer_1_gap_identification MUST be period-keyed: {"fy2024": {...}}
+
+Risk flags:
+  Sustainable --> risk_flags CAN be empty []
+  Adequate    --> risk_flags MUST have 2-3 items
+  Fragile     --> risk_flags MUST have 2-3 items
+  Focus on FUNDING STRUCTURE risks only.
+Rating: Sustainable | Adequate | Fragile (3 ratings only, no others)
+
+================================================================================
+8. FINANCIAL RATIOS (ALL MANDATORY)
+================================================================================
+
+PROFITABILITY (all 7):
+  gross_profit_margin:     (Gross Profit / Revenue)  x  100        [%]
+  operating_profit_margin: (Operating Profit / Revenue)  x  100    [%]
+  pbt_margin:              (PBT / Revenue)  x  100                 [%]
+  net_profit_margin:       (NPAT / Revenue)  x  100                [%]
+  ebitda_margin:           (EBITDA / Revenue)  x  100              [%]
+  roa:                     (NPAT / Total Assets)  x  100           [%]
+  roe:                     (NPAT / Total Equity)  x  100           [%]
+
+LIQUIDITY:
+  current_ratio:  CA / CL                    [x]  benchmark >= 1.25x
+  quick_ratio:    (CA  -  Inventory) / CL      [x]
+  cash_ratio:     Cash and Bank Balances / CL  [x]
+
+  CASH RATIO - IMPORTANT:
+    Use UNRESTRICTED cash only.
+    Do NOT include fixed deposits, pledged deposits, FSRA, sinking funds,
+    margin deposits, or any restricted/term deposits.
+    These are classified separately as "deposits_with_licensed_banks" in the BS
+    and are excluded because they are typically pledged, restricted, or not
+    immediately available for debt service.
+
+    WHEN THE BS LUMPS CASH AND FD TOGETHER:
+    If the face of the BS shows a single "Cash and bank balances" line that
+    includes both cash on hand and fixed deposits, you MUST read the cash
+    note (e.g. Note 20) to identify the split.
+    Use ONLY the unrestricted/unpledged portion for the cash ratio.
+    The "cash_and_bank" field in the BS JSON should reflect the FACE value,
+    but the cash ratio calculation must use the note-identified unrestricted
+    cash amount.
+
+LEVERAGE:
+  liabilities_to_equity: Total Liabilities / Total Equity  [x]  benchmark <= 4.0x
+  liabilities_to_assets: Total Liabilities / Total Assets  [x]
+  gearing_ratio:         Total Borrowings / Total Equity   [x]
+  interest_coverage:     EBITDA / Finance Costs            [x]
+  dscr:                  EBITDA / (Term Current + Interest) [x]  benchmark >= 1.25x
+
+EFFICIENCY (DUAL-METHOD CALCULATION):
+  asset_turnover:        Revenue / Total Assets                    [x]
+
+  For debtor_days, creditor_days, inventory_days, cash_conversion_cycle:
+  Calculate BOTH values_standard (x365) and values_period_adjusted (x Period Days).
+
+  CRITICAL - PERIOD-ADJUSTED APPLICABILITY:
+    Audited FY periods (365/366 days): values_period_adjusted = values_standard.
+      Do NOT compute separate adjusted values. They are mathematically identical.
+      Do NOT report or narrate period-adjusted figures for audited FY periods.
+    MA/YTD periods ONLY: values_period_adjusted uses actual period days.
+      Only for these periods, report BOTH standard and adjusted with interpretation.
+
+  Period Days: Use ACTUAL calendar day count as defined in Section 2.
+  Do NOT use rounded conventions (180, 182, etc.).
+
+  FORMULAS:
+    debtor_days:           (Trade Rec / Revenue)  x  Days           [days]
+    creditor_days:         (Trade Pay / COS)  x  Days               [days]
+    inventory_days:        (Inventory / COS)  x  Days               [days]
+    cash_conversion_cycle: Debtor Days + Inventory Days  -  Creditor Days [days]
+
+  INTERPRETATION (period-adjusted):
+    Result < Period Days:  Normal - within period activity
+    Result > Period Days:  Carryover from prior periods - flag for discussion
+
+  BACKWARD COMPATIBILITY (IMPORTANT):
+    Include "values" field that duplicates "values_standard" for Streamlit display.
+    The "values" field ensures existing Streamlit app renders the ratios correctly.
+
+  NARRATIVE: For MA/YTD periods ONLY, report both values with practical interpretation.
+    Example: "Debtor days: 314 (standard) / 155 (period-adjusted), representing
+             86% of 6-month revenue still uncollected."
+    For audited FY periods, report standard values only. No adjusted narrative.
+
+Category keys must end with '_ratios'. Each ratio needs formula, values, unit.
+Efficiency ratios (except asset_turnover): values, values_standard, values_period_adjusted, period_days.
+
+================================================================================
+9. TNW ANALYSIS
+================================================================================
+
+Original TNW = Total Shareholders' Equity
+Adjusted TNW = Original  -  Intangibles  -  Due from Directors  -  Due from Related Co
+
+Both must be calculated for all periods. Assessment field MANDATORY.
+
+================================================================================
+10. ANALYSIS SUMMARY (MANDATORY)
+================================================================================
+
+KEY OBSERVATIONS (all 9 required):
+  revenue_trend, profitability_trend, liquidity_position,
+  working_capital_cycle (CCC primary, OWC supporting - NOT NWC),
+  debt_structure, funding_position, asset_base,
+  related_party_exposure, dividend_policy
+
+POSITIVE INDICATORS: 4-6 minimum. Each: {title, description}
+AREAS OF CONCERN: 3-5 minimum. Each: {title, description, severity}
+
+Severity guide:
+  CRITICAL: Current ratio < 1.0, DSCR < 1.0
+  HIGH:     Positive CCC with no WC facility, Debtor days > 120 (standard),
+            Period-adjusted days > Period length, Funding gap > 20%
+  MEDIUM:   Gearing > 1.5x, Facility structure mismatch
+  Note:     Negative OWC/CCC is FAVORABLE, not a concern.
+
+RECOMMENDATIONS: Each: {priority, area, action}
+
+FACILITY SUITABILITY SUMMARY:
+  existing_facilities_appropriate, existing_facility_concerns,
+  working_capital_assessment: {owc_status, ccc_status, wcr_amount,
+    needs_wc_facility, rationale},
+  potential_facilities_to_consider, facilities_to_avoid, key_conditions
+
+================================================================================
+11. OTHER REQUIREMENTS
+================================================================================
+
+AUDIT OPINION (per audited period):
+  opinion_type (Unqualified/Qualified/Adverse/Disclaimer),
+  auditor_name, audit_firm_number, date_signed,
+  emphasis_of_matter, key_audit_matters, going_concern_note
+  For restated comparatives: opinion_type = "Unqualified (Restated Comparative)"
+
+PRIOR YEAR ADJUSTMENTS (if any period is restated):
+  Extract from the prior year adjustment note:
+  - description: what was adjusted and why
+  - Per affected period: the specific line items and RM amounts adjusted
+  This is MANDATORY whenever any period label includes "Restated".
+  See Section 2 (Restated Periods) for full rules.
+
+FUNDING PROFILE: All values SIMPLE INTEGERS (latest period only).
+  Identify: HP, Term Loan, OD, Trade Financing, Related Party Borrowings.
+  Term: current_portion, non_current_portion, total.
+  Revolving: amount.
+
+INTEGRITY CHECK: Per period: Total Assets = Total Equity + Total Liabilities.
+  Variance must be 0.
+
+================================================================================
+12. JSON SCHEMA (MATCH EXACTLY)
+================================================================================
+
+{
+  "_schema_info": {
+    "version": "v7.9",
+    "generated_by": "Kredit Lab",
+    "generation_date": "YYYY-MM-DD",
+    "currency_unit": "RM or RM000",
+    "analysis_basis": "Company Standalone or Consolidated"
+  },
+  "company_info": {
+    "name": "",
+    "legal_name": "",
+    "registration_no": "",
+    "principal_activities": "",
+    "business_nature": "",
+    "financial_year_end": "DD Month (e.g. 31 December, 30 June, 30 September)",
+    "sme_qualified": true,
+    "sme_qualification_note": "",
+    "periods_analyzed": {
+      "fy2023": "FY Mon 2023 (Audited)",
+      "fy2024": "FY Mon 2024 (Audited)",
+      "ytd_mon2025": "YTD Mon 2025 (MA)"
+    },
+    "directors": [],
+    "audit_opinion": {
+      "fy2024": {
+        "opinion_type": "Unqualified",
+        "auditor_name": "",
+        "audit_firm_number": "",
+        "date_signed": "",
+        "emphasis_of_matter": null,
+        "key_audit_matters": [],
+        "going_concern_note": false
+      }
+    },
+    "prior_year_adjustments": {
+      "has_restatement": false,
+      "description": "",
+      "adjustments_by_period": {
+        "fy2023": {
+          "line_items_affected": [],
+          "summary": ""
+        }
+      }
+    }
+  },
+  "statement_of_comprehensive_income": {
+    "revenue": {
+      "line_items": {},
+      "total": {"display_name": "Total Revenue", "values": {}}
+    },
+    "cost_of_sales": {
+      "line_items": {},
+      "total": {"display_name": "Total Cost of Sales", "values": {}}
+    },
+    "gross_profit": {
+      "display_name": "Gross Profit",
+      "formula": "Revenue - Cost of Sales",
+      "values": {}
+    },
+    "other_income": {
+      "line_items": {},
+      "total": {"display_name": "Total Other Income", "values": {}}
+    },
+    "operating_expenses": {
+      "administrative_expenses": {
+        "line_items": {},
+        "total": {"display_name": "Total Administrative Expenses", "values": {}}
+      },
+      "other_expenses": {
+        "line_items": {},
+        "total": {"display_name": "Total Other Expenses", "values": {}}
+      }
+    },
+    "operating_profit": {
+      "display_name": "Operating Profit",
+      "formula": "Gross Profit + Other Income - Operating Expenses",
+      "values": {}
+    },
+    "finance_costs": {
+      "line_items": {},
+      "total": {"display_name": "Total Finance Costs", "values": {}}
+    },
+    "profit_before_tax": {
+      "display_name": "Profit Before Tax",
+      "formula": "Operating Profit - Finance Costs",
+      "values": {}
+    },
+    "taxation": {
+      "line_items": {},
+      "total": {"display_name": "Total Taxation", "values": {}}
+    },
+    "net_profit_after_tax": {
+      "display_name": "Net Profit After Tax",
+      "formula": "Profit Before Tax - Taxation",
+      "values": {}
+    },
+    "ebitda": {
+      "display_name": "EBITDA",
+      "formula": "Operating Profit + Depreciation",
+      "depreciation_source": {},
+      "depreciation_note": "",
+      "values": {}
+    },
+    "dividends": {
+      "declared": {"display_name": "Dividends Declared", "values": {}}
+    }
+  },
+  "statement_of_financial_position": {
+    "non_current_assets": {
+      "property_plant_equipment": {
+        "line_items": {},
+        "total": {"display_name": "Total PPE", "values": {}}
+      },
+      "intangible_assets": {"display_name": "Intangible Assets", "values": {}},
+      "total": {"display_name": "Total Non-Current Assets", "values": {}}
+    },
+    "current_assets": {
+      "trade_receivables": {"display_name": "Trade Receivables", "values": {}},
+      "inventory": {"display_name": "Inventory", "values": {}},
+      "other_receivables": {"display_name": "Other Receivables", "values": {}},
+      "cash_and_bank": {"display_name": "Cash and Bank Balances", "values": {}},
+      "total": {"display_name": "Total Current Assets", "values": {}}
+    },
+    "total_assets": {"display_name": "Total Assets", "values": {}},
+    "equity": {
+      "share_capital": {"display_name": "Share Capital", "values": {}},
+      "retained_earnings": {"display_name": "Retained Earnings", "values": {}},
+      "total": {"display_name": "Total Equity", "values": {}}
+    },
+    "non_current_liabilities": {
+      "total": {"display_name": "Total Non-Current Liabilities", "values": {}}
+    },
+    "current_liabilities": {
+      "trade_payables": {"display_name": "Trade Payables", "values": {}},
+      "total": {"display_name": "Total Current Liabilities", "values": {}}
+    },
+    "total_liabilities": {"display_name": "Total Liabilities", "values": {}},
+    "total_equity_and_liabilities": {"display_name": "Total Equity and Liabilities", "values": {}}
+  },
+  "financial_ratios": {
+    "profitability_ratios": {
+      "gross_profit_margin": {"display_name": "Gross Profit Margin", "formula": "(GP / Revenue) x 100", "values": {}, "unit": "%"},
+      "operating_profit_margin": {"display_name": "Operating Profit Margin", "formula": "(OP / Revenue) x 100", "values": {}, "unit": "%"},
+      "pbt_margin": {"display_name": "PBT Margin", "formula": "(PBT / Revenue) x 100", "values": {}, "unit": "%"},
+      "net_profit_margin": {"display_name": "Net Profit Margin", "formula": "(NPAT / Revenue) x 100", "values": {}, "unit": "%"},
+      "ebitda_margin": {"display_name": "EBITDA Margin", "formula": "(EBITDA / Revenue) x 100", "values": {}, "unit": "%"},
+      "roa": {"display_name": "Return on Assets", "formula": "(NPAT / TA) x 100", "values": {}, "unit": "%"},
+      "roe": {"display_name": "Return on Equity", "formula": "(NPAT / TE) x 100", "values": {}, "unit": "%"}
+    },
+    "liquidity_ratios": {
+      "current_ratio": {"display_name": "Current Ratio", "formula": "CA / CL", "values": {}, "unit": "x", "benchmark": ">= 1.25x"},
+      "quick_ratio": {"display_name": "Quick Ratio", "formula": "(CA - Inventory) / CL", "values": {}, "unit": "x"},
+      "cash_ratio": {"display_name": "Cash Ratio", "formula": "Cash and Bank Balances / CL", "values": {}, "unit": "x"}
+    },
+    "leverage_ratios": {
+      "liabilities_to_equity": {"display_name": "Liabilities-to-Equity", "formula": "TL / TE", "values": {}, "unit": "x", "benchmark": "<= 4.0x"},
+      "liabilities_to_assets": {"display_name": "Liabilities-to-Assets", "formula": "TL / TA", "values": {}, "unit": "x"},
+      "gearing_ratio": {"display_name": "Gearing Ratio", "formula": "Total Borrowings / TE", "values": {}, "unit": "x"},
+      "interest_coverage": {"display_name": "Interest Coverage", "formula": "EBITDA / Finance Costs", "values": {}, "unit": "x"},
+      "dscr": {"display_name": "DSCR", "formula": "EBITDA / (Term Current + Interest)", "values": {}, "unit": "x", "benchmark": ">= 1.25x"}
+    },
+    "efficiency_ratios": {
+      "asset_turnover": {"display_name": "Asset Turnover", "formula": "Revenue / TA", "values": {}, "unit": "x"},
+      "debtor_days": {
+        "display_name": "Debtor Days",
+        "formula": "(Trade Rec / Revenue) x Days",
+        "values": {},
+        "values_standard": {},
+        "values_period_adjusted": {},
+        "period_days": {},
+        "unit": "days"
+      },
+      "creditor_days": {
+        "display_name": "Creditor Days",
+        "formula": "(Trade Pay / COS) x Days",
+        "values": {},
+        "values_standard": {},
+        "values_period_adjusted": {},
+        "period_days": {},
+        "unit": "days"
+      },
+      "inventory_days": {
+        "display_name": "Inventory Days",
+        "formula": "(Inventory / COS) x Days",
+        "values": {},
+        "values_standard": {},
+        "values_period_adjusted": {},
+        "period_days": {},
+        "unit": "days"
+      },
+      "cash_conversion_cycle": {
+        "display_name": "Cash Conversion Cycle",
+        "formula": "Debtor Days + Inventory Days - Creditor Days",
+        "values": {},
+        "values_standard": {},
+        "values_period_adjusted": {},
+        "period_days": {},
+        "unit": "days"
+      }
+    }
+  },
+  "working_capital_analysis": {
+    "operating_working_capital": {
+      "display_name": "Operating Working Capital",
+      "formula": "Trade Receivables + Inventory - Trade Payables",
+      "values": {},
+      "components": {}
+    },
+    "working_capital_requirement": {
+      "display_name": "Working Capital Requirement",
+      "formula": "CCC(adj) x Revenue / Period Days",
+      "values": {}
+    },
+    "working_capital_assessment": {
+      "needs_wc_facility": false,
+      "owc_status": "negative | positive",
+      "ccc_status": "negative | positive",
+      "recommended_facility_type": "None required | OD | Invoice Financing | Trade Financing",
+      "recommended_facility_amount": 0,
+      "rationale": "Single narrative covering all periods. CCC as primary driver."
+    }
+  },
+  "funding_mismatch_analysis": {
+    "layer_1_gap_identification": {
+      "fy2024": {
+        "non_current_assets": 0,
+        "long_term_funding": {"total_equity": 0, "non_current_liabilities": 0, "total": 0},
+        "funding_gap": 0,
+        "gap_as_percentage_of_nca": 0,
+        "status": "matched | minor_mismatch | moderate_mismatch | severe_mismatch"
+      }
+    },
+    "funding_structure_assessment": {
+      "overall_sustainability_rating": "Sustainable | Adequate | Fragile | Unsustainable",
+      "risk_flags": []
+    }
+  },
+  "funding_profile": {
+    "existing_facilities_identified": {
+      "hire_purchase": {"current_portion": 0, "non_current_portion": 0, "total": 0},
+      "term_loan": {"current_portion": 0, "non_current_portion": 0, "total": 0},
+      "overdraft": {"amount": 0},
+      "trade_financing": {"amount": 0},
+      "related_party_borrowings": {"amount": 0},
+      "total_borrowings": 0
+    },
+    "suitability_vs_financial_condition": {
+      "general_guidance": []
+    }
+  },
+  "tnw_analysis": {
+    "calculation": {
+      "fy2024": {
+        "original_tnw": 0,
+        "adjustments": {
+          "less_intangibles": 0,
+          "less_due_from_directors": 0,
+          "less_due_from_related_companies": 0,
+          "total_adjustments": 0
+        },
+        "adjusted_tnw": 0
+      }
+    },
+    "summary": {
+      "original_tnw": {},
+      "adjusted_tnw": {}
+    },
+    "assessment": {
+      "original_tnw_positive": true,
+      "adjusted_tnw_positive": true,
+      "tnw_trend": "improving | stable | declining",
+      "notes": ""
+    }
+  },
+  "dscr_analysis": {
+    "facility_classification": {
+      "term_facilities": {
+        "facilities": [],
+        "description": "Principal + Interest in DSCR",
+        "current_portions": {"total": 0}
+      },
+      "revolving_facilities": {
+        "facilities": [],
+        "description": "Interest ONLY in DSCR",
+        "amounts": {"total": 0}
+      }
+    },
+    "calculation": {
+      "fy2024": {
+        "ebitda": 0,
+        "debt_service": {
+          "principal_repayment": {"total_principal": 0},
+          "interest_expense": 0,
+          "total_debt_service": 0
+        },
+        "dscr": 0
+      }
+    },
+    "benchmark": ">= 1.25x",
+    "assessment": ""
+  },
+  "integrity_check": {
+    "balance_sheet_verification": {
+      "fy2024": {
+        "total_assets": 0,
+        "total_equity_and_liabilities": 0,
+        "variance": 0,
+        "balanced": true
+      }
+    }
+  },
+  "analysis_summary": {
+    "key_observations": {
+      "revenue_trend": "",
+      "profitability_trend": "",
+      "liquidity_position": "",
+      "working_capital_cycle": "",
+      "debt_structure": "",
+      "funding_position": "",
+      "asset_base": "",
+      "related_party_exposure": "",
+      "dividend_policy": ""
+    },
+    "positive_indicators": [{"title": "", "description": ""}],
+    "areas_of_concern": [{"title": "", "description": "", "severity": "HIGH | MEDIUM | LOW"}],
+    "recommendations": [{"priority": "HIGH | MEDIUM | LOW", "area": "", "action": ""}],
+    "facility_suitability_summary": {
+      "existing_facilities_appropriate": true,
+      "existing_facility_concerns": [],
+      "working_capital_assessment": {
+        "owc_status": "negative | positive",
+        "ccc_status": "negative | positive",
+        "wcr_amount": 0,
+        "needs_wc_facility": false,
+        "rationale": ""
+      },
+      "potential_facilities_to_consider": [],
+      "facilities_to_avoid": [],
+      "key_conditions": []
+    }
+  },
+  "report_footer": {
+    "disclaimer": {
+      "title": "Disclaimer",
+      "text": "This report is generated by Kredit Lab for informational purposes only and does not constitute financial, legal, or credit advice. The analysis is based on the financial statements provided and should be verified against original source documents. Users should conduct their own due diligence before making any credit or investment decisions."
+    },
+    "copyright": {
+      "main": "(c) 2026 Kredit Lab. All rights reserved.",
+      "subsidiary": "Kredit Lab is a division of Capital Island Sdn. Bhd."
+    }
+  }
+}
+
+================================================================================
+END OF FRAMEWORK v7.9
+================================================================================
