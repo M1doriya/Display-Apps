@@ -1,0 +1,1 @@
+web: streamlit run streamlit_financial_report_v7_5.py --server.port $PORT --server.address 0.0.0.0
