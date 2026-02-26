@@ -119,7 +119,7 @@ async def process_pdf_endpoint(
         raise HTTPException(status_code=413, detail=f"PDF too large (max {MAX_UPLOAD_SIZE_BYTES} bytes)")
 
     try:
-        result = process_pdf(pdf_bytes)
+        result = process_pdf(pdf_bytes, render_html=return_mode in {"both", "html_only"})
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Pipeline failed: {exc}") from exc
 
@@ -130,6 +130,8 @@ async def process_pdf_endpoint(
         payload["html"] = result.html
     if include_pdf and return_mode in {"both", "html_only"}:
         try:
+            if result.html is None:
+                raise ValueError("HTML output was not generated")
             pdf_bytes = convert_html_to_pdf(result.html)
             payload["pdf_base64"] = base64.b64encode(pdf_bytes).decode("utf-8")
         except Exception as exc:
