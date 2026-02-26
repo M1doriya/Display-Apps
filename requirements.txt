@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+python-multipart
+anthropic
+tensorlake
+httpx
+beautifulsoup4
+tabulate
+pandas
+streamlit
+openpyxl
+weasyprint
+jinja2
