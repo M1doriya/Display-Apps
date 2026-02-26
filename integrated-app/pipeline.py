@@ -35,6 +35,21 @@ PROMPT_PATH = ROOT_DIR / "KreditLab_v7_9_updated.txt"
 RENDERER_PATH = ROOT_DIR / "financial-statement-analysis" / "streamlit_financial_report_v7_7.py"
 
 
+def _load_system_prompt() -> str:
+    instruction_files = sorted(
+        p for p in ROOT_DIR.glob("*.txt") if "kreditlab" in p.stem.lower()
+    )
+    if not instruction_files:
+        if not PROMPT_PATH.exists():
+            raise RuntimeError(f"Prompt file not found at {PROMPT_PATH}")
+        instruction_files = [PROMPT_PATH]
+
+    sections = []
+    for path in instruction_files:
+        sections.append(f"# Instructions from {path.name}\n{path.read_text(encoding='utf-8')}")
+    return "\n\n".join(sections)
+
+
 def _load_renderer_module():
     spec = importlib.util.spec_from_file_location("kreditlab_renderer", RENDERER_PATH)
     if not spec or not spec.loader:
@@ -226,10 +241,7 @@ def _call_anthropic(system_prompt: str, user_content: str, corrective: bool = Fa
 
 
 def transform_to_kreditlab_json(extraction_result: Dict[str, Any]) -> Dict[str, Any]:
-    if not PROMPT_PATH.exists():
-        raise RuntimeError(f"Prompt file not found at {PROMPT_PATH}")
-
-    system_prompt = PROMPT_PATH.read_text(encoding="utf-8")
+    system_prompt = _load_system_prompt()
     user_payload = {
         "full_text_with_tables": extraction_result["full_text_with_tables"],
         "tables_json": extraction_result.get("tables_json", {}),

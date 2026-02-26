@@ -5,38 +5,154 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Display-Apps Integrated Pipeline</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 24px; background: #f8fafc; }
-    .card { background: white; border-radius: 10px; padding: 16px; box-shadow: 0 2px 10px rgba(0,0,0,.08); }
-    iframe { width: 100%; height: 600px; border: 1px solid #ddd; border-radius: 8px; }
-    .row { display: flex; gap: 8px; margin: 10px 0; align-items: center; }
-    button { padding: 8px 14px; }
-    .hidden { display:none; }
+    :root {
+      color-scheme: light;
+      --bg: #f3f6fb;
+      --card: #ffffff;
+      --text: #0f172a;
+      --muted: #64748b;
+      --primary: #2563eb;
+      --primary-soft: #dbeafe;
+      --success: #16a34a;
+      --danger: #dc2626;
+      --border: #e2e8f0;
+      --shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, "Segoe UI", Arial, sans-serif;
+      background: radial-gradient(circle at top right, #eff6ff 0, #f8fafc 40%, var(--bg) 100%);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 28px;
+    }
+
+    .layout {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: grid;
+      gap: 20px;
+      grid-template-columns: 360px 1fr;
+      align-items: start;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+      padding: 20px;
+    }
+
+    h1 { margin-top: 0; margin-bottom: 8px; font-size: 1.5rem; }
+    p { margin: 0 0 14px; color: var(--muted); line-height: 1.45; }
+    label { display: block; font-size: 0.9rem; margin-bottom: 6px; color: #334155; }
+    .input, .token-input {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      background: #fff;
+      margin-bottom: 12px;
+    }
+
+    .checkbox { display: flex; align-items: center; gap: 8px; margin: 12px 0; color: #334155; }
+    .btn {
+      width: 100%;
+      border: none;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+      color: white;
+      font-weight: 600;
+      padding: 11px 12px;
+      cursor: pointer;
+    }
+    .btn:disabled { opacity: 0.7; cursor: wait; }
+
+    .status { margin-top: 12px; min-height: 22px; font-size: 0.92rem; }
+    .status.success { color: var(--success); }
+    .status.error { color: var(--danger); }
+
+    .results { display: grid; gap: 12px; margin-top: 12px; }
+    .result-item {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      background: #f8fafc;
+    }
+    .result-name { font-weight: 600; font-size: 0.92rem; }
+    .result-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+    .result-actions button {
+      border: 1px solid #cbd5e1;
+      background: white;
+      border-radius: 8px;
+      padding: 6px 8px;
+      cursor: pointer;
+      font-size: 0.8rem;
+    }
+
+    iframe {
+      width: 100%;
+      min-height: 760px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: white;
+    }
+
+    .preview-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .pill { padding: 4px 8px; border-radius: 999px; background: var(--primary-soft); color: var(--primary); font-size: 0.78rem; }
+
+    @media (max-width: 1024px) {
+      .layout { grid-template-columns: 1fr; }
+      iframe { min-height: 520px; }
+    }
   </style>
 </head>
 <body>
-  <div class="card">
-    <h1>Display-Apps: End-to-End PDF Pipeline</h1>
-    <p>Upload a PDF, run Tensorlake + Claude + HTML rendering, then download JSON/HTML/PDF.</p>
-    <div class="row">
-      <input id="pdfFile" type="file" accept="application/pdf" />
-      <label><input id="includePdf" type="checkbox" /> Include PDF output (optional)</label>
-      <button id="runBtn">Process</button>
-    </div>
-    <p id="status"></p>
-    <div class="row hidden" id="downloads">
-      <button id="downloadJson">Download kreditlab.json</button>
-      <button id="downloadHtml">Download report.html</button>
-      <button id="downloadPdf" class="hidden">Download report.pdf</button>
-    </div>
-  </div>
+  <div class="layout">
+    <section class="card">
+      <h1>PDF Analysis Workspace</h1>
+      <p>Upload one or many PDFs, run Tensorlake + Claude + KreditLab instructions, then preview and download outputs.</p>
 
-  <h2>HTML Preview</h2>
-  <iframe id="preview"></iframe>
+      <label for="token">Bearer token (optional)</label>
+      <input id="token" class="token-input" placeholder="Paste APP_TOKEN if API is protected" />
+
+      <label for="pdfFiles">Choose PDF files</label>
+      <input id="pdfFiles" class="input" type="file" accept="application/pdf" multiple />
+
+      <label class="checkbox"><input id="includePdf" type="checkbox" /> Include generated PDF output</label>
+      <button id="runBtn" class="btn">Process Selected Files</button>
+      <div id="status" class="status"></div>
+      <div id="results" class="results"></div>
+    </section>
+
+    <section class="card">
+      <div class="preview-header">
+        <h2 style="margin:0; font-size:1.1rem;">HTML Preview</h2>
+        <span id="previewLabel" class="pill">No file selected</span>
+      </div>
+      <iframe id="preview"></iframe>
+    </section>
+  </div>
 
   <script>
     const statusEl = document.getElementById('status');
     const preview = document.getElementById('preview');
-    let latest = { json: null, html: null, pdfBase64: null };
+    const resultsEl = document.getElementById('results');
+    const previewLabel = document.getElementById('previewLabel');
+    let latest = [];
 
     function downloadTextFile(filename, content, mime) {
       const blob = new Blob([content], { type: mime });
@@ -63,56 +179,107 @@
       URL.revokeObjectURL(url);
     }
 
+    function authHeaders() {
+      const token = document.getElementById('token').value.trim();
+      return token ? { Authorization: `Bearer ${token}` } : {};
+    }
+
+    function fileStem(filename) {
+      return filename.replace(/\.[^.]+$/, '') || 'report';
+    }
+
+    function renderResults() {
+      resultsEl.innerHTML = '';
+      latest.forEach((entry, idx) => {
+        const row = document.createElement('div');
+        row.className = 'result-item';
+
+        const left = document.createElement('div');
+        left.innerHTML = `<div class="result-name">${entry.filename}</div>${entry.error ? `<div style="color:#dc2626;font-size:.8rem;">${entry.error}</div>` : ''}`;
+
+        const actions = document.createElement('div');
+        actions.className = 'result-actions';
+
+        if (!entry.error) {
+          const previewBtn = document.createElement('button');
+          previewBtn.textContent = 'Preview';
+          previewBtn.onclick = () => {
+            preview.srcdoc = entry.html;
+            previewLabel.textContent = entry.filename;
+          };
+
+          const jsonBtn = document.createElement('button');
+          jsonBtn.textContent = 'JSON';
+          jsonBtn.onclick = () => downloadTextFile(`${fileStem(entry.filename)}.kreditlab.json`, JSON.stringify(entry.kreditlab_json, null, 2), 'application/json');
+
+          const htmlBtn = document.createElement('button');
+          htmlBtn.textContent = 'HTML';
+          htmlBtn.onclick = () => downloadTextFile(`${fileStem(entry.filename)}.report.html`, entry.html, 'text/html');
+
+          actions.append(previewBtn, jsonBtn, htmlBtn);
+
+          if (entry.pdf_base64) {
+            const pdfBtn = document.createElement('button');
+            pdfBtn.textContent = 'PDF';
+            pdfBtn.onclick = () => downloadPdfBase64(`${fileStem(entry.filename)}.report.pdf`, entry.pdf_base64);
+            actions.append(pdfBtn);
+          }
+
+          if (idx === 0 && !preview.srcdoc) {
+            preview.srcdoc = entry.html;
+            previewLabel.textContent = entry.filename;
+          }
+        }
+
+        row.append(left, actions);
+        resultsEl.appendChild(row);
+      });
+    }
+
     document.getElementById('runBtn').addEventListener('click', async () => {
-      const file = document.getElementById('pdfFile').files[0];
-      if (!file) {
-        alert('Please choose a PDF file first.');
+      const files = Array.from(document.getElementById('pdfFiles').files || []);
+      if (!files.length) {
+        alert('Please choose at least one PDF file.');
         return;
       }
 
       const includePdf = document.getElementById('includePdf').checked;
-      statusEl.textContent = 'Processing... this can take a while for longer PDFs.';
+      const runBtn = document.getElementById('runBtn');
+      runBtn.disabled = true;
+      statusEl.className = 'status';
+      statusEl.textContent = `Processing ${files.length} file(s)... this can take a while.`;
+      preview.srcdoc = '';
+      previewLabel.textContent = 'Waiting for result';
 
       const formData = new FormData();
-      formData.append('file', file);
+      files.forEach((file) => formData.append('files', file));
 
       try {
-        const response = await fetch(`/process/pdf?return=both&include_pdf=${includePdf}`, {
+        const response = await fetch(`/process/pdfs?include_pdf=${includePdf}`, {
           method: 'POST',
+          headers: authHeaders(),
           body: formData
         });
+
         const data = await response.json();
         if (!response.ok) {
           throw new Error(data.detail || 'Request failed');
         }
 
-        latest.json = data.kreditlab_json;
-        latest.html = data.html;
-        latest.pdfBase64 = data.pdf_base64 || null;
+        latest = data.results || [];
+        const failed = latest.filter(item => item.error).length;
+        renderResults();
 
-        preview.srcdoc = latest.html;
-        document.getElementById('downloads').classList.remove('hidden');
-        if (latest.pdfBase64) {
-          document.getElementById('downloadPdf').classList.remove('hidden');
-        } else {
-          document.getElementById('downloadPdf').classList.add('hidden');
-        }
-        statusEl.textContent = 'Done.';
+        statusEl.className = failed ? 'status error' : 'status success';
+        statusEl.textContent = failed
+          ? `Completed with ${failed} failed file(s).`
+          : `Done. ${latest.length} file(s) processed successfully.`;
       } catch (err) {
+        statusEl.className = 'status error';
         statusEl.textContent = `Error: ${err.message}`;
+      } finally {
+        runBtn.disabled = false;
       }
-    });
-
-    document.getElementById('downloadJson').addEventListener('click', () => {
-      downloadTextFile('kreditlab.json', JSON.stringify(latest.json, null, 2), 'application/json');
-    });
-
-    document.getElementById('downloadHtml').addEventListener('click', () => {
-      downloadTextFile('report.html', latest.html, 'text/html');
-    });
-
-    document.getElementById('downloadPdf').addEventListener('click', () => {
-      if (latest.pdfBase64) downloadPdfBase64('report.pdf', latest.pdfBase64);
     });
   </script>
 </body>
