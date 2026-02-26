@@ -45,16 +45,6 @@ uvicorn main:app --host 0.0.0.0 --port 8000
    uvicorn main:app --host 0.0.0.0 --port $PORT
    ```
 
-
-### If Railway shows "railpack could not determine how to build the app"
-
-This repo now includes root-level `requirements.txt`, `Procfile`, and `nixpacks.toml` so Railpack can detect Python automatically even if Root Directory is not set. The root requirements file is standalone (not a relative include), which avoids missing-path errors during build.
-
-You can deploy in either mode:
-
-1. **Recommended**: set Root Directory to `integrated-app`
-2. **Fallback**: leave Root Directory blank (repo root). Railway will use root `requirements.txt` and start command that `cd`s into `integrated-app`.
-
 ## API endpoints
 
 - `GET /health` → `{"status":"ok"}`
