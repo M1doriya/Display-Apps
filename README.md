@@ -2,9 +2,9 @@
 
 This repository now supports a **single-service Railway deployment** that runs the full pipeline end-to-end:
 
-1. Upload PDF
+1. Upload one or multiple PDFs
 2. Extract text/tables via Tensorlake
-3. Transform to KreditLab JSON via Anthropic Claude (system prompt from `KreditLab_v7_9_updated.txt`)
+3. Transform to KreditLab JSON via Anthropic Claude (system prompt loaded from KreditLab `.txt` instruction files in repo root)
 4. Render report HTML
 5. Download JSON/HTML (and optional PDF)
 
@@ -15,6 +15,7 @@ Deploy from repository root as one Railway service.
 - `ANTHROPIC_API_KEY` (required)
 - `TENSORLAKE_API_KEY` (required)
 - `APP_TOKEN` (optional, if set then POST endpoints require `Authorization: Bearer <APP_TOKEN>`)
+- `CORS_ALLOW_ORIGINS` (optional comma-separated allowlist; defaults to `*`)
 - `ANTHROPIC_MODEL` (optional, default `claude-3-5-sonnet-latest`)
 
 ## Railway build/run
@@ -44,6 +45,11 @@ Open `http://localhost:8000` for upload UI.
   - query params:
     - `return=both|html_only|json_only` (default `both`)
     - `include_pdf=true|false` (default false)
+- `POST /process/pdfs`
+  - multipart form with `files` (one or many PDFs)
+  - query params:
+    - `include_pdf=true|false` (default false)
+  - returns array with per-file success/error entries
 - `POST /render/html`
   - body: `{"data": <kreditlab_json>}`
 
