@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Display-Apps Integrated Pipeline</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; background: #f8fafc; }
+    .card { background: white; border-radius: 10px; padding: 16px; box-shadow: 0 2px 10px rgba(0,0,0,.08); }
+    iframe { width: 100%; height: 600px; border: 1px solid #ddd; border-radius: 8px; }
+    .row { display: flex; gap: 8px; margin: 10px 0; align-items: center; }
+    button { padding: 8px 14px; }
+    .hidden { display:none; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Display-Apps: End-to-End PDF Pipeline</h1>
+    <p>Upload a PDF, run Tensorlake + Claude + HTML rendering, then download JSON/HTML/PDF.</p>
+    <div class="row">
+      <input id="pdfFile" type="file" accept="application/pdf" />
+      <label><input id="includePdf" type="checkbox" /> Include PDF output (optional)</label>
+      <button id="runBtn">Process</button>
+    </div>
+    <p id="status"></p>
+    <div class="row hidden" id="downloads">
+      <button id="downloadJson">Download kreditlab.json</button>
+      <button id="downloadHtml">Download report.html</button>
+      <button id="downloadPdf" class="hidden">Download report.pdf</button>
+    </div>
+  </div>
+
+  <h2>HTML Preview</h2>
+  <iframe id="preview"></iframe>
+
+  <script>
+    const statusEl = document.getElementById('status');
+    const preview = document.getElementById('preview');
+    let latest = { json: null, html: null, pdfBase64: null };
+
+    function downloadTextFile(filename, content, mime) {
+      const blob = new Blob([content], { type: mime });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    function downloadPdfBase64(filename, base64String) {
+      const bytes = Uint8Array.from(atob(base64String), c => c.charCodeAt(0));
+      const blob = new Blob([bytes], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    document.getElementById('runBtn').addEventListener('click', async () => {
+      const file = document.getElementById('pdfFile').files[0];
+      if (!file) {
+        alert('Please choose a PDF file first.');
+        return;
+      }
+
+      const includePdf = document.getElementById('includePdf').checked;
+      statusEl.textContent = 'Processing... this can take a while for longer PDFs.';
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        const response = await fetch(`/process/pdf?return=both&include_pdf=${includePdf}`, {
+          method: 'POST',
+          body: formData
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.detail || 'Request failed');
+        }
+
+        latest.json = data.kreditlab_json;
+        latest.html = data.html;
+        latest.pdfBase64 = data.pdf_base64 || null;
+
+        preview.srcdoc = latest.html;
+        document.getElementById('downloads').classList.remove('hidden');
+        if (latest.pdfBase64) {
+          document.getElementById('downloadPdf').classList.remove('hidden');
+        } else {
+          document.getElementById('downloadPdf').classList.add('hidden');
+        }
+        statusEl.textContent = 'Done.';
+      } catch (err) {
+        statusEl.textContent = `Error: ${err.message}`;
+      }
+    });
+
+    document.getElementById('downloadJson').addEventListener('click', () => {
+      downloadTextFile('kreditlab.json', JSON.stringify(latest.json, null, 2), 'application/json');
+    });
+
+    document.getElementById('downloadHtml').addEventListener('click', () => {
+      downloadTextFile('report.html', latest.html, 'text/html');
+    });
+
+    document.getElementById('downloadPdf').addEventListener('click', () => {
+      if (latest.pdfBase64) downloadPdfBase64('report.pdf', latest.pdfBase64);
+    });
+  </script>
+</body>
+</html>
