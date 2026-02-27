@@ -22,6 +22,7 @@ from tensorlake.documentai import (
 )
 
 LOGGER = logging.getLogger(__name__)
+DEFAULT_ANTHROPIC_MODEL = "claude-opus-4-1-20250805"
 REQUIRED_TOP_LEVEL_KEYS = {
     "_schema_info",
     "company_info",
@@ -217,21 +218,48 @@ def _call_anthropic(system_prompt: str, user_content: str, corrective: bool = Fa
         else "Your previous output was invalid. Return ONLY corrected valid JSON matching the required schema."
     )
 
-    message = client.messages.create(
-        model=os.environ.get("ANTHROPIC_MODEL", "claude-3-5-sonnet-latest"),
-        max_tokens=8192,
-        system=system_prompt,
-        messages=[
-            {
-                "role": "user",
-                "content": (
-                    f"{assistant_instruction}\n\n"
-                    "Transform this extracted financial data into KreditLab JSON format:\n\n"
-                    f"FULL_TEXT_WITH_TABLES:\n{user_content}"
-                ),
-            }
-        ],
-    )
+    requested_model = os.environ.get("ANTHROPIC_MODEL", DEFAULT_ANTHROPIC_MODEL)
+    model_candidates = [requested_model]
+    if requested_model != DEFAULT_ANTHROPIC_MODEL:
+        model_candidates.append(DEFAULT_ANTHROPIC_MODEL)
+
+    last_error: Optional[Exception] = None
+    message = None
+    for model_name in model_candidates:
+        try:
+            message = client.messages.create(
+                model=model_name,
+                max_tokens=8192,
+                system=system_prompt,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": (
+                            f"{assistant_instruction}\n\n"
+                            "Transform this extracted financial data into KreditLab JSON format:\n\n"
+                            f"FULL_TEXT_WITH_TABLES:\n{user_content}"
+                        ),
+                    }
+                ],
+            )
+            if model_name != requested_model:
+                LOGGER.warning(
+                    "Configured ANTHROPIC_MODEL '%s' failed. Fell back to '%s'.",
+                    requested_model,
+                    model_name,
+                )
+            break
+        except Exception as exc:
+            if "not_found_error" in str(exc) or "404" in str(exc):
+                last_error = exc
+                LOGGER.warning("Anthropic model '%s' is unavailable. Trying fallback.", model_name)
+                continue
+            raise
+
+    if message is None:
+        raise RuntimeError(
+            "Unable to call Anthropic API: configured model is unavailable and fallback failed."
+        ) from last_error
 
     chunks = []
     for block in message.content:
