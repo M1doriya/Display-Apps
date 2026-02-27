@@ -261,7 +261,16 @@
           body: formData
         });
 
-        const data = await response.json();
+        const contentType = response.headers.get('content-type') || '';
+        let data;
+        if (contentType.includes('application/json')) {
+          data = await response.json();
+        } else {
+          const rawText = await response.text();
+          const snippet = rawText.replace(/\s+/g, ' ').trim().slice(0, 120);
+          throw new Error(`Expected JSON response but received: ${snippet || 'empty response'}`);
+        }
+
         if (!response.ok) {
           throw new Error(data.detail || 'Request failed');
         }
