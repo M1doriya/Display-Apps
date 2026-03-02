@@ -77,6 +77,37 @@ const stageState = {
   rendered: []
 };
 
+function collectStageErrors(items) {
+  return (items || [])
+    .filter(item => item.status === 'error')
+    .map(item => `${item.filename || 'unknown file'}: ${item.error || 'Unknown error'}`);
+}
+
+function renderStageErrors(title, items) {
+  const errors = collectStageErrors(items);
+  if (!errors.length) {
+    return;
+  }
+
+  const row = document.createElement('div');
+  row.className = 'result-item';
+  row.innerHTML = `<div><strong>${title}</strong></div>`;
+
+  const list = document.createElement('ul');
+  list.style.margin = '8px 0 0 18px';
+  list.style.padding = '0';
+  errors.forEach((errorLine) => {
+    const li = document.createElement('li');
+    li.style.color = '#dc2626';
+    li.style.fontSize = '.84rem';
+    li.textContent = errorLine;
+    list.appendChild(li);
+  });
+
+  row.appendChild(list);
+  resultsEl.prepend(row);
+}
+
 function authHeaders(extra={}) {
   const token = document.getElementById('token').value.trim();
   return token ? { ...extra, Authorization: `Bearer ${token}` } : extra;
@@ -135,6 +166,7 @@ document.getElementById('runStage1Btn').addEventListener('click', async () => {
   document.getElementById('runStage2Btn').disabled = true;
   document.getElementById('runStage3Btn').disabled = true;
   preview.srcdoc = ''; previewLabel.textContent = 'No file selected';
+  resultsEl.innerHTML = '';
 
   const formData = new FormData(); files.forEach(file => formData.append('files', file));
   try {
@@ -142,8 +174,12 @@ document.getElementById('runStage1Btn').addEventListener('click', async () => {
     const response = await fetch('/stage/tensorlake', { method:'POST', headers: authHeaders(), body: formData });
     const data = await parseResponse(response);
     stageState.extracted = data.results || [];
+    renderStageErrors('Stage 1 errors', stageState.extracted);
     const failed = stageState.extracted.filter(x => x.status === 'error').length;
-    if (failed === stageState.extracted.length) throw new Error('All files failed in stage 1.');
+    if (failed === stageState.extracted.length) {
+      const details = collectStageErrors(stageState.extracted).join(' | ');
+      throw new Error(`All files failed in stage 1. ${details}`);
+    }
     setStage('stage1', failed ? 'error' : 'success');
     setStatus(`Stage 1 completed. Success: ${stageState.extracted.length - failed}, Failed: ${failed}. Click Proceed for Stage 2.`, !!failed);
     document.getElementById('runStage2Btn').disabled = false;
@@ -167,8 +203,12 @@ document.getElementById('runStage2Btn').addEventListener('click', async () => {
     });
     const data = await parseResponse(response);
     stageState.transformed = data.results || [];
+    renderStageErrors('Stage 2 errors', stageState.transformed);
     const failed = stageState.transformed.filter(x => x.status === 'error').length;
-    if (failed === stageState.transformed.length) throw new Error('All files failed in stage 2.');
+    if (failed === stageState.transformed.length) {
+      const details = collectStageErrors(stageState.transformed).join(' | ');
+      throw new Error(`All files failed in stage 2. ${details}`);
+    }
     setStage('stage2', failed ? 'error' : 'success');
     setStatus(`Stage 2 completed. Success: ${stageState.transformed.length - failed}, Failed: ${failed}. Click Proceed for Stage 3.`, !!failed);
     document.getElementById('runStage3Btn').disabled = false;
@@ -192,6 +232,7 @@ document.getElementById('runStage3Btn').addEventListener('click', async () => {
     });
     const data = await parseResponse(response);
     stageState.rendered = data.results || [];
+    renderStageErrors('Stage 3 errors', stageState.rendered);
     const failed = stageState.rendered.filter(x => x.status === 'error').length;
     setStage('stage3', failed ? 'error' : 'success');
     renderResults();
