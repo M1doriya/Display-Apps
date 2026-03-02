@@ -16,7 +16,7 @@ Deploy from repository root as one Railway service.
 - `TENSORLAKE_API_KEY` (required)
 - `APP_TOKEN` (optional, if set then POST endpoints require `Authorization: Bearer <APP_TOKEN>`)
 - `CORS_ALLOW_ORIGINS` (optional comma-separated allowlist; defaults to `*`)
-- `ANTHROPIC_MODEL` (optional, default `claude-3-5-sonnet-20241022`; if invalid, app retries with `claude-opus-4-1-20250805`)
+- `ANTHROPIC_MODEL` (optional, default `claude-sonnet-4-6`; if invalid, app retries with `claude-opus-4-1-20250805`)
 
 ## Railway build/run
 This repo includes:

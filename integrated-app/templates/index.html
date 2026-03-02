@@ -6,113 +6,187 @@
   <title>KreditLab Pipeline App</title>
   <style>
     :root {
-      --bg: #eef2ff;
+      --bg: #f3f6fb;
       --surface: #ffffff;
-      --surface-2: #f8fafc;
-      --text: #0f172a;
-      --muted: #64748b;
+      --surface-soft: #f8fafd;
+      --text: #111827;
+      --muted: #6b7280;
       --primary: #1d4ed8;
-      --primary-2: #2563eb;
+      --primary-2: #3b82f6;
+      --accent: #0ea5e9;
       --success: #16a34a;
       --danger: #dc2626;
-      --border: #dbe4f0;
-      --shadow: 0 8px 22px rgba(15, 23, 42, 0.08);
+      --warning: #ca8a04;
+      --border: #d9e2ec;
+      --shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
     }
 
     [data-theme="dark"] {
-      --bg: #0b1220;
+      --bg: #050b18;
       --surface: #0f172a;
-      --surface-2: #111b31;
-      --text: #e2e8f0;
+      --surface-soft: #131f37;
+      --text: #e5edf9;
       --muted: #94a3b8;
-      --primary: #3b82f6;
-      --primary-2: #2563eb;
+      --primary: #60a5fa;
+      --primary-2: #3b82f6;
+      --accent: #22d3ee;
       --success: #22c55e;
       --danger: #ef4444;
-      --border: #25324a;
-      --shadow: 0 12px 28px rgba(2, 6, 23, 0.45);
+      --warning: #f59e0b;
+      --border: #273852;
+      --shadow: 0 20px 38px rgba(2, 6, 23, 0.56);
     }
 
     * { box-sizing: border-box; }
+
     body {
       margin: 0;
       font-family: Inter, "Segoe UI", Arial, sans-serif;
-      background: radial-gradient(circle at top left, rgba(59,130,246,.2), transparent 30%), var(--bg);
+      background:
+        radial-gradient(circle at 5% 5%, rgba(59,130,246,.16), transparent 35%),
+        radial-gradient(circle at 100% 0%, rgba(14,165,233,.12), transparent 30%),
+        var(--bg);
       color: var(--text);
-      padding: 24px;
+      min-height: 100vh;
+      padding: 26px;
+    }
+
+    .shell {
+      max-width: 1320px;
+      margin: 0 auto;
     }
 
     .app-header {
-      max-width: 1200px;
-      margin: 0 auto 16px;
+      background: linear-gradient(135deg, var(--surface), var(--surface-soft));
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 18px 22px;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      gap: 12px;
+      gap: 16px;
+      box-shadow: var(--shadow);
+      margin-bottom: 16px;
     }
 
     .brand {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 14px;
     }
 
     .brand img {
-      height: 38px;
-      width: auto;
-      object-fit: contain;
-      border-radius: 8px;
-      background: rgba(255, 255, 255, 0.6);
+      height: 42px;
+      border-radius: 10px;
+      background: rgba(255,255,255,.72);
       padding: 4px 8px;
     }
 
-    .brand h1 {
+    .brand-text h1 {
       margin: 0;
-      font-size: 1.15rem;
+      font-size: 1.25rem;
       letter-spacing: .2px;
+    }
+
+    .brand-text p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: .9rem;
     }
 
     .theme-btn {
       border: 1px solid var(--border);
       color: var(--text);
       background: var(--surface);
-      padding: 8px 12px;
+      padding: 10px 14px;
       border-radius: 10px;
       cursor: pointer;
-      font-weight: 600;
+      font-weight: 700;
     }
 
     .layout {
-      max-width: 1200px;
-      margin: 0 auto;
       display: grid;
       gap: 18px;
-      grid-template-columns: 390px 1fr;
+      grid-template-columns: 420px minmax(0, 1fr);
       align-items: start;
     }
 
     .card {
       background: var(--surface);
       border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 18px;
+      border-radius: 18px;
+      padding: 20px;
       box-shadow: var(--shadow);
     }
+
+    .title {
+      margin: 0;
+      font-size: 1.1rem;
+    }
+
+    .subtitle {
+      margin: 8px 0 16px;
+      color: var(--muted);
+      font-size: .92rem;
+      line-height: 1.45;
+    }
+
+    .field { margin-bottom: 12px; }
+    .field label { font-size: .9rem; color: var(--muted); }
 
     .input, .token-input {
       width: 100%;
       border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 10px;
-      margin: 8px 0 12px;
-      background: var(--surface-2);
+      border-radius: 12px;
+      padding: 11px 12px;
+      margin-top: 6px;
+      background: var(--surface-soft);
       color: var(--text);
+      outline: none;
     }
+
+    .input:focus, .token-input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(59,130,246,.15);
+    }
+
+    .check-wrap {
+      margin: 8px 0 14px;
+      color: var(--muted);
+      font-size: .9rem;
+    }
+
+    .stage-list { display: grid; gap: 8px; margin: 14px 0 16px; }
+
+    .stage {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px 12px;
+      font-size: .9rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: var(--surface-soft);
+    }
+
+    .pill {
+      padding: 4px 9px;
+      border-radius: 999px;
+      background: #dbe4f0;
+      color: #334155;
+      text-transform: capitalize;
+      font-size: .8rem;
+      font-weight: 600;
+    }
+
+    .pill.success { background: #dcfce7; color: #166534; }
+    .pill.error { background: #fee2e2; color: #991b1b; }
+    .pill.running { background: #dbeafe; color: #1d4ed8; }
 
     .btn {
       width: 100%;
       border: none;
-      border-radius: 10px;
+      border-radius: 12px;
       color: #fff;
       font-weight: 700;
       padding: 11px;
@@ -121,43 +195,35 @@
       background: linear-gradient(135deg, var(--primary), var(--primary-2));
     }
 
-    .btn.secondary { background: #475569; }
-    .btn:disabled { opacity: .55; cursor: not-allowed; }
-    .status { margin-top: 12px; min-height: 20px; font-size: .9rem; color: var(--muted); }
+    .btn.secondary { background: linear-gradient(135deg, #334155, #475569); }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+    .status {
+      margin-top: 14px;
+      min-height: 20px;
+      font-size: .9rem;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
     .status.success { color: var(--success); }
     .status.error { color: var(--danger); }
 
-    .stage-list { display: grid; gap: 8px; margin: 12px 0; }
-
-    .stage {
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 8px 10px;
-      font-size: .88rem;
-      display: flex;
-      justify-content: space-between;
-      background: var(--surface-2);
+    .results-title {
+      margin: 18px 0 8px;
+      font-size: .92rem;
+      color: var(--muted);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .08em;
     }
-
-    .pill {
-      padding: 2px 8px;
-      border-radius: 999px;
-      background: #dbe4f0;
-      color: #334155;
-      text-transform: capitalize;
-      font-size: .82rem;
-    }
-
-    .pill.success { background: #dcfce7; color: #166534; }
-    .pill.error { background: #fee2e2; color: #991b1b; }
-    .pill.running { background: #dbeafe; color: #1d4ed8; }
 
     .result-item {
       border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 10px;
+      border-radius: 12px;
+      padding: 11px;
       margin-top: 8px;
-      background: var(--surface-2);
+      background: var(--surface-soft);
     }
 
     .result-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
@@ -166,67 +232,88 @@
       border: 1px solid var(--border);
       background: var(--surface);
       color: var(--text);
-      border-radius: 8px;
-      padding: 6px 8px;
+      border-radius: 9px;
+      padding: 6px 9px;
       cursor: pointer;
+      font-weight: 600;
+    }
+
+    .preview-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
     }
 
     iframe {
       width: 100%;
-      min-height: 760px;
+      min-height: 780px;
       border: 1px solid var(--border);
       border-radius: 12px;
       background: #fff;
     }
 
-    @media (max-width: 1024px) {
+    @media (max-width: 1080px) {
       .layout { grid-template-columns: 1fr; }
-      iframe { min-height: 500px; }
+      iframe { min-height: 560px; }
+      body { padding: 18px; }
+      .app-header { padding: 15px; }
     }
   </style>
 </head>
 <body>
-  <header class="app-header">
-    <div class="brand">
-      <img id="brandLogo" src="/assets/KreditLab-light.png" alt="KreditLab logo" />
-      <h1>KreditLab PDF Analysis App</h1>
+  <div class="shell">
+    <header class="app-header">
+      <div class="brand">
+        <img id="brandLogo" src="/assets/KreditLab-light.png" alt="KreditLab logo" />
+        <div class="brand-text">
+          <h1>KreditLab Financial Statement Workspace</h1>
+          <p>Professional 3-stage pipeline: extract, transform (Sonnet 4.6), and render export-ready reports.</p>
+        </div>
+      </div>
+      <button id="themeToggle" class="theme-btn" type="button">🌙 Dark mode</button>
+    </header>
+
+    <div class="layout">
+      <section class="card">
+        <h2 class="title">Pipeline Controls</h2>
+        <p class="subtitle">Upload one or more PDFs and run each stage in sequence. Stage status and output files will appear below.</p>
+
+        <div class="field">
+          <label for="token">Bearer token (optional)</label>
+          <input id="token" class="token-input" placeholder="Paste APP_TOKEN if required" />
+        </div>
+
+        <div class="field">
+          <label for="pdfFiles">Choose PDF files</label>
+          <input id="pdfFiles" class="input" type="file" accept="application/pdf" multiple />
+        </div>
+
+        <label class="check-wrap"><input id="includePdf" type="checkbox" /> Include generated PDF output</label>
+
+        <div class="stage-list">
+          <div class="stage"><span>1) Tensorlake extraction</span><span id="stage1" class="pill">pending</span></div>
+          <div class="stage"><span>2) API transform (Sonnet 4.6)</span><span id="stage2" class="pill">pending</span></div>
+          <div class="stage"><span>3) HTML rendering</span><span id="stage3" class="pill">pending</span></div>
+        </div>
+
+        <button id="runStage1Btn" class="btn">Start Stage 1 (Tensorlake)</button>
+        <button id="runStage2Btn" class="btn secondary" disabled>Proceed Stage 2 (API Transform)</button>
+        <button id="runStage3Btn" class="btn secondary" disabled>Proceed Stage 3 (HTML Render)</button>
+
+        <div id="status" class="status"></div>
+        <div class="results-title">Results</div>
+        <div id="results"></div>
+      </section>
+
+      <section class="card">
+        <div class="preview-header">
+          <h3 style="margin:0;">Live HTML Preview</h3>
+          <span id="previewLabel" class="pill">No file selected</span>
+        </div>
+        <iframe id="preview"></iframe>
+      </section>
     </div>
-    <button id="themeToggle" class="theme-btn" type="button">🌙 Dark mode</button>
-  </header>
-
-  <div class="layout">
-    <section class="card">
-      <h2 style="margin-top:0;">3-Stage PDF Analysis</h2>
-      <p style="margin-top:0;color:var(--muted);">Run Tensorlake first, then proceed to transform and HTML rendering.</p>
-
-      <label for="token">Bearer token (optional)</label>
-      <input id="token" class="token-input" placeholder="Paste APP_TOKEN if required" />
-
-      <label for="pdfFiles">Choose PDF files</label>
-      <input id="pdfFiles" class="input" type="file" accept="application/pdf" multiple />
-      <label><input id="includePdf" type="checkbox" /> Include generated PDF output</label>
-
-      <div class="stage-list">
-        <div class="stage"><span>1) Tensorlake extraction</span><span id="stage1" class="pill">pending</span></div>
-        <div class="stage"><span>2) API transform (Sonnet)</span><span id="stage2" class="pill">pending</span></div>
-        <div class="stage"><span>3) HTML rendering</span><span id="stage3" class="pill">pending</span></div>
-      </div>
-
-      <button id="runStage1Btn" class="btn">Start Stage 1 (Tensorlake)</button>
-      <button id="runStage2Btn" class="btn secondary" disabled>Proceed Stage 2 (API Transform)</button>
-      <button id="runStage3Btn" class="btn secondary" disabled>Proceed Stage 3 (HTML Render)</button>
-
-      <div id="status" class="status"></div>
-      <div id="results"></div>
-    </section>
-
-    <section class="card">
-      <div style="display:flex;justify-content:space-between;align-items:center; margin-bottom:10px;">
-        <h3 style="margin:0;">HTML Preview</h3>
-        <span id="previewLabel" class="pill">No file selected</span>
-      </div>
-      <iframe id="preview"></iframe>
-    </section>
   </div>
 
 <script>
@@ -408,7 +495,7 @@ document.getElementById('runStage2Btn').addEventListener('click', async () => {
 
   setStage('stage2', 'running');
   try {
-    setStatus('Running stage 2 API transform using Sonnet model...');
+    setStatus('Running stage 2 API transform using Sonnet 4.6...');
     const response = await fetch('/stage/transform', {
       method: 'POST',
       headers: authHeaders({ 'Content-Type': 'application/json' }),
