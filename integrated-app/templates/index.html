@@ -110,7 +110,7 @@
     .layout {
       display: grid;
       gap: 18px;
-      grid-template-columns: 420px minmax(0, 1fr);
+      grid-template-columns: minmax(0, 520px);
       align-items: start;
     }
 
@@ -242,24 +242,8 @@
       font-weight: 600;
     }
 
-    .preview-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 10px;
-    }
-
-    iframe {
-      width: 100%;
-      min-height: 780px;
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      background: #fff;
-    }
-
     @media (max-width: 1080px) {
       .layout { grid-template-columns: 1fr; }
-      iframe { min-height: 560px; }
       body { padding: 18px; }
       .app-header { padding: 15px; }
     }
@@ -310,21 +294,12 @@
         <div id="results"></div>
       </section>
 
-      <section class="card">
-        <div class="preview-header">
-          <h3 style="margin:0;">Live HTML Preview</h3>
-          <span id="previewLabel" class="pill">No file selected</span>
-        </div>
-        <iframe id="preview"></iframe>
-      </section>
     </div>
   </div>
 
 <script>
 const statusEl = document.getElementById('status');
-const preview = document.getElementById('preview');
 const resultsEl = document.getElementById('results');
-const previewLabel = document.getElementById('previewLabel');
 const themeToggle = document.getElementById('themeToggle');
 const brandLogo = document.getElementById('brandLogo');
 
@@ -415,7 +390,7 @@ function downloadPdfBase64(filename, base64) {
 
 function renderResults() {
   resultsEl.innerHTML = '';
-  stageState.rendered.forEach((entry, idx) => {
+  stageState.rendered.forEach((entry) => {
     const row = document.createElement('div');
     row.className = 'result-item';
     row.innerHTML = `<div><strong>${entry.filename}</strong>${entry.error ? `<div style="color:#dc2626;font-size:.84rem;">${entry.error}</div>` : ''}</div>`;
@@ -423,10 +398,6 @@ function renderResults() {
     if (!entry.error) {
       const actions = document.createElement('div');
       actions.className = 'result-actions';
-      const previewBtn = document.createElement('button');
-      previewBtn.textContent = 'Preview';
-      previewBtn.onclick = () => { preview.srcdoc = entry.html; previewLabel.textContent = entry.filename; };
-
       const jsonBtn = document.createElement('button');
       jsonBtn.textContent = 'JSON';
       jsonBtn.onclick = () => downloadTextFile(`${fileStem(entry.filename)}.kreditlab.json`, JSON.stringify(entry.kreditlab_json, null, 2), 'application/json');
@@ -435,7 +406,7 @@ function renderResults() {
       htmlBtn.textContent = 'HTML';
       htmlBtn.onclick = () => downloadTextFile(`${fileStem(entry.filename)}.report.html`, entry.html, 'text/html');
 
-      actions.append(previewBtn, jsonBtn, htmlBtn);
+      actions.append(jsonBtn, htmlBtn);
       if (entry.pdf_base64) {
         const pdfBtn = document.createElement('button');
         pdfBtn.textContent = 'PDF';
@@ -443,10 +414,6 @@ function renderResults() {
         actions.append(pdfBtn);
       }
       row.appendChild(actions);
-      if (idx === 0 && !preview.srcdoc) {
-        preview.srcdoc = entry.html;
-        previewLabel.textContent = entry.filename;
-      }
     }
 
     resultsEl.appendChild(row);
@@ -470,8 +437,6 @@ document.getElementById('runStage1Btn').addEventListener('click', async () => {
   setStage('stage3', 'pending');
   document.getElementById('runStage2Btn').disabled = true;
   document.getElementById('runStage3Btn').disabled = true;
-  preview.srcdoc = '';
-  previewLabel.textContent = 'No file selected';
   resultsEl.innerHTML = '';
 
   const formData = new FormData();
