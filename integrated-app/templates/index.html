@@ -3,293 +3,204 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Display-Apps Integrated Pipeline</title>
+  <title>Display-Apps Staged Pipeline</title>
   <style>
-    :root {
-      color-scheme: light;
-      --bg: #f3f6fb;
-      --card: #ffffff;
-      --text: #0f172a;
-      --muted: #64748b;
-      --primary: #2563eb;
-      --primary-soft: #dbeafe;
-      --success: #16a34a;
-      --danger: #dc2626;
-      --border: #e2e8f0;
-      --shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
-    }
-
+    :root { --bg:#f3f6fb; --card:#fff; --text:#0f172a; --muted:#64748b; --primary:#2563eb; --success:#16a34a; --danger:#dc2626; --border:#e2e8f0; }
     * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: Inter, "Segoe UI", Arial, sans-serif;
-      background: radial-gradient(circle at top right, #eff6ff 0, #f8fafc 40%, var(--bg) 100%);
-      color: var(--text);
-      min-height: 100vh;
-      padding: 28px;
-    }
-
-    .layout {
-      max-width: 1200px;
-      margin: 0 auto;
-      display: grid;
-      gap: 20px;
-      grid-template-columns: 360px 1fr;
-      align-items: start;
-    }
-
-    .card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      box-shadow: var(--shadow);
-      padding: 20px;
-    }
-
-    h1 { margin-top: 0; margin-bottom: 8px; font-size: 1.5rem; }
-    p { margin: 0 0 14px; color: var(--muted); line-height: 1.45; }
-    label { display: block; font-size: 0.9rem; margin-bottom: 6px; color: #334155; }
-    .input, .token-input {
-      width: 100%;
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 10px 12px;
-      background: #fff;
-      margin-bottom: 12px;
-    }
-
-    .checkbox { display: flex; align-items: center; gap: 8px; margin: 12px 0; color: #334155; }
-    .btn {
-      width: 100%;
-      border: none;
-      border-radius: 10px;
-      background: linear-gradient(135deg, #2563eb, #1d4ed8);
-      color: white;
-      font-weight: 600;
-      padding: 11px 12px;
-      cursor: pointer;
-    }
-    .btn:disabled { opacity: 0.7; cursor: wait; }
-
-    .status { margin-top: 12px; min-height: 22px; font-size: 0.92rem; }
-    .status.success { color: var(--success); }
-    .status.error { color: var(--danger); }
-
-    .results { display: grid; gap: 12px; margin-top: 12px; }
-    .result-item {
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 12px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 10px;
-      background: #f8fafc;
-    }
-    .result-name { font-weight: 600; font-size: 0.92rem; }
-    .result-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
-    .result-actions button {
-      border: 1px solid #cbd5e1;
-      background: white;
-      border-radius: 8px;
-      padding: 6px 8px;
-      cursor: pointer;
-      font-size: 0.8rem;
-    }
-
-    iframe {
-      width: 100%;
-      min-height: 760px;
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      background: white;
-    }
-
-    .preview-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 12px;
-    }
-
-    .pill { padding: 4px 8px; border-radius: 999px; background: var(--primary-soft); color: var(--primary); font-size: 0.78rem; }
-
-    @media (max-width: 1024px) {
-      .layout { grid-template-columns: 1fr; }
-      iframe { min-height: 520px; }
-    }
+    body { margin:0; font-family: Inter, "Segoe UI", Arial, sans-serif; background:var(--bg); color:var(--text); padding:24px; }
+    .layout { max-width:1200px; margin:0 auto; display:grid; gap:18px; grid-template-columns:380px 1fr; align-items:start; }
+    .card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:18px; }
+    .input, .token-input { width:100%; border:1px solid var(--border); border-radius:10px; padding:10px; margin-bottom:10px; }
+    .btn { width:100%; border:none; border-radius:10px; color:#fff; font-weight:600; padding:10px; cursor:pointer; margin-top:8px; background:linear-gradient(135deg,#2563eb,#1d4ed8); }
+    .btn.secondary { background:#334155; }
+    .btn:disabled { opacity:.55; cursor:not-allowed; }
+    .status { margin-top:10px; min-height:20px; font-size:.9rem; }
+    .status.success{ color:var(--success);} .status.error{color:var(--danger);}
+    .stage-list { display:grid; gap:8px; margin:12px 0; }
+    .stage { border:1px solid var(--border); border-radius:10px; padding:8px 10px; font-size:.88rem; display:flex; justify-content:space-between; }
+    .stage .pill { padding:2px 8px; border-radius:999px; background:#e2e8f0; }
+    .pill.success { background:#dcfce7; color:#166534; }
+    .pill.error { background:#fee2e2; color:#991b1b; }
+    .pill.running { background:#dbeafe; color:#1d4ed8; }
+    .result-item{ border:1px solid var(--border); border-radius:10px; padding:10px; margin-top:8px; background:#f8fafc; }
+    .result-actions{ display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+    .result-actions button{ border:1px solid #cbd5e1; background:#fff; border-radius:8px; padding:6px 8px; cursor:pointer; }
+    iframe { width:100%; min-height:760px; border:1px solid var(--border); border-radius:12px; background:#fff; }
+    @media (max-width:1024px){ .layout{ grid-template-columns:1fr; } iframe{ min-height:500px; } }
   </style>
 </head>
 <body>
-  <div class="layout">
-    <section class="card">
-      <h1>PDF Analysis Workspace</h1>
-      <p>Upload one or many PDFs, run Tensorlake + Claude + KreditLab instructions, then preview and download outputs.</p>
+<div class="layout">
+  <section class="card">
+    <h2 style="margin-top:0;">3-Stage PDF Analysis</h2>
+    <p style="margin-top:0;color:#64748b;">Run Tensorlake first, then click proceed for API transform, then proceed for HTML rendering.</p>
 
-      <label for="token">Bearer token (optional)</label>
-      <input id="token" class="token-input" placeholder="Paste APP_TOKEN if API is protected" />
+    <label for="token">Bearer token (optional)</label>
+    <input id="token" class="token-input" placeholder="Paste APP_TOKEN if required" />
 
-      <label for="pdfFiles">Choose PDF files</label>
-      <input id="pdfFiles" class="input" type="file" accept="application/pdf" multiple />
+    <label for="pdfFiles">Choose PDF files</label>
+    <input id="pdfFiles" class="input" type="file" accept="application/pdf" multiple />
+    <label><input id="includePdf" type="checkbox" /> Include generated PDF output</label>
 
-      <label class="checkbox"><input id="includePdf" type="checkbox" /> Include generated PDF output</label>
-      <button id="runBtn" class="btn">Process Selected Files</button>
-      <div id="status" class="status"></div>
-      <div id="results" class="results"></div>
-    </section>
+    <div class="stage-list">
+      <div class="stage"><span>1) Tensorlake extraction</span><span id="stage1" class="pill">pending</span></div>
+      <div class="stage"><span>2) API transform (Sonnet)</span><span id="stage2" class="pill">pending</span></div>
+      <div class="stage"><span>3) HTML rendering</span><span id="stage3" class="pill">pending</span></div>
+    </div>
 
-    <section class="card">
-      <div class="preview-header">
-        <h2 style="margin:0; font-size:1.1rem;">HTML Preview</h2>
-        <span id="previewLabel" class="pill">No file selected</span>
-      </div>
-      <iframe id="preview"></iframe>
-    </section>
-  </div>
+    <button id="runStage1Btn" class="btn">Start Stage 1 (Tensorlake)</button>
+    <button id="runStage2Btn" class="btn secondary" disabled>Proceed Stage 2 (API Transform)</button>
+    <button id="runStage3Btn" class="btn secondary" disabled>Proceed Stage 3 (HTML Render)</button>
 
-  <script>
-    const statusEl = document.getElementById('status');
-    const preview = document.getElementById('preview');
-    const resultsEl = document.getElementById('results');
-    const previewLabel = document.getElementById('previewLabel');
-    let latest = [];
+    <div id="status" class="status"></div>
+    <div id="results"></div>
+  </section>
 
-    function downloadTextFile(filename, content, mime) {
-      const blob = new Blob([content], { type: mime });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+  <section class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center; margin-bottom:10px;">
+      <h3 style="margin:0;">HTML Preview</h3>
+      <span id="previewLabel" class="pill">No file selected</span>
+    </div>
+    <iframe id="preview"></iframe>
+  </section>
+</div>
+
+<script>
+const statusEl = document.getElementById('status');
+const preview = document.getElementById('preview');
+const resultsEl = document.getElementById('results');
+const previewLabel = document.getElementById('previewLabel');
+
+const stageState = {
+  extracted: [],
+  transformed: [],
+  rendered: []
+};
+
+function authHeaders(extra={}) {
+  const token = document.getElementById('token').value.trim();
+  return token ? { ...extra, Authorization: `Bearer ${token}` } : extra;
+}
+
+function setStage(id, state) {
+  const el = document.getElementById(id);
+  el.className = `pill ${state}`;
+  el.textContent = state;
+}
+
+function setStatus(message, isError=false) {
+  statusEl.className = `status ${isError ? 'error' : 'success'}`;
+  statusEl.textContent = message;
+}
+
+function fileStem(filename) { return filename.replace(/\.[^.]+$/, '') || 'report'; }
+function downloadTextFile(filename, content, mime) { const blob = new Blob([content], { type:mime }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); }
+function downloadPdfBase64(filename, base64String) { const bytes = Uint8Array.from(atob(base64String), c => c.charCodeAt(0)); const blob = new Blob([bytes], { type:'application/pdf' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); }
+
+function renderResults() {
+  resultsEl.innerHTML = '';
+  stageState.rendered.forEach((entry, idx) => {
+    const row = document.createElement('div');
+    row.className = 'result-item';
+    row.innerHTML = `<div><strong>${entry.filename}</strong>${entry.error ? `<div style="color:#dc2626;font-size:.84rem;">${entry.error}</div>` : ''}</div>`;
+
+    if (!entry.error) {
+      const actions = document.createElement('div');
+      actions.className = 'result-actions';
+      const previewBtn = document.createElement('button'); previewBtn.textContent = 'Preview'; previewBtn.onclick = () => { preview.srcdoc = entry.html; previewLabel.textContent = entry.filename; };
+      const jsonBtn = document.createElement('button'); jsonBtn.textContent = 'JSON'; jsonBtn.onclick = () => downloadTextFile(`${fileStem(entry.filename)}.kreditlab.json`, JSON.stringify(entry.kreditlab_json, null, 2), 'application/json');
+      const htmlBtn = document.createElement('button'); htmlBtn.textContent = 'HTML'; htmlBtn.onclick = () => downloadTextFile(`${fileStem(entry.filename)}.report.html`, entry.html, 'text/html');
+      actions.append(previewBtn, jsonBtn, htmlBtn);
+      if (entry.pdf_base64) { const pdfBtn = document.createElement('button'); pdfBtn.textContent = 'PDF'; pdfBtn.onclick = () => downloadPdfBase64(`${fileStem(entry.filename)}.report.pdf`, entry.pdf_base64); actions.append(pdfBtn); }
+      row.appendChild(actions);
+      if (idx === 0 && !preview.srcdoc) { preview.srcdoc = entry.html; previewLabel.textContent = entry.filename; }
     }
+    resultsEl.appendChild(row);
+  });
+}
 
-    function downloadPdfBase64(filename, base64String) {
-      const bytes = Uint8Array.from(atob(base64String), c => c.charCodeAt(0));
-      const blob = new Blob([bytes], { type: 'application/pdf' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    }
+async function parseResponse(response) {
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) throw new Error('Expected JSON response from API.');
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.detail || 'Request failed');
+  return data;
+}
 
-    function authHeaders() {
-      const token = document.getElementById('token').value.trim();
-      return token ? { Authorization: `Bearer ${token}` } : {};
-    }
+document.getElementById('runStage1Btn').addEventListener('click', async () => {
+  const files = Array.from(document.getElementById('pdfFiles').files || []);
+  if (!files.length) return alert('Please choose at least one PDF file.');
 
-    function fileStem(filename) {
-      return filename.replace(/\.[^.]+$/, '') || 'report';
-    }
+  setStage('stage1', 'running'); setStage('stage2', 'pending'); setStage('stage3', 'pending');
+  document.getElementById('runStage2Btn').disabled = true;
+  document.getElementById('runStage3Btn').disabled = true;
+  preview.srcdoc = ''; previewLabel.textContent = 'No file selected';
 
-    function renderResults() {
-      resultsEl.innerHTML = '';
-      latest.forEach((entry, idx) => {
-        const row = document.createElement('div');
-        row.className = 'result-item';
+  const formData = new FormData(); files.forEach(file => formData.append('files', file));
+  try {
+    setStatus('Running stage 1 with Tensorlake...');
+    const response = await fetch('/stage/tensorlake', { method:'POST', headers: authHeaders(), body: formData });
+    const data = await parseResponse(response);
+    stageState.extracted = data.results || [];
+    const failed = stageState.extracted.filter(x => x.status === 'error').length;
+    if (failed === stageState.extracted.length) throw new Error('All files failed in stage 1.');
+    setStage('stage1', failed ? 'error' : 'success');
+    setStatus(`Stage 1 completed. Success: ${stageState.extracted.length - failed}, Failed: ${failed}. Click Proceed for Stage 2.`, !!failed);
+    document.getElementById('runStage2Btn').disabled = false;
+  } catch (err) {
+    setStage('stage1', 'error');
+    setStatus(`Stage 1 failed: ${err.message}`, true);
+  }
+});
 
-        const left = document.createElement('div');
-        left.innerHTML = `<div class="result-name">${entry.filename}</div>${entry.error ? `<div style="color:#dc2626;font-size:.8rem;">${entry.error}</div>` : ''}`;
+document.getElementById('runStage2Btn').addEventListener('click', async () => {
+  const items = stageState.extracted.filter(x => x.status === 'success').map(x => ({ filename:x.filename, extraction_result:x.extraction_result }));
+  if (!items.length) return alert('No successful stage 1 data found.');
 
-        const actions = document.createElement('div');
-        actions.className = 'result-actions';
-
-        if (!entry.error) {
-          const previewBtn = document.createElement('button');
-          previewBtn.textContent = 'Preview';
-          previewBtn.onclick = () => {
-            preview.srcdoc = entry.html;
-            previewLabel.textContent = entry.filename;
-          };
-
-          const jsonBtn = document.createElement('button');
-          jsonBtn.textContent = 'JSON';
-          jsonBtn.onclick = () => downloadTextFile(`${fileStem(entry.filename)}.kreditlab.json`, JSON.stringify(entry.kreditlab_json, null, 2), 'application/json');
-
-          const htmlBtn = document.createElement('button');
-          htmlBtn.textContent = 'HTML';
-          htmlBtn.onclick = () => downloadTextFile(`${fileStem(entry.filename)}.report.html`, entry.html, 'text/html');
-
-          actions.append(previewBtn, jsonBtn, htmlBtn);
-
-          if (entry.pdf_base64) {
-            const pdfBtn = document.createElement('button');
-            pdfBtn.textContent = 'PDF';
-            pdfBtn.onclick = () => downloadPdfBase64(`${fileStem(entry.filename)}.report.pdf`, entry.pdf_base64);
-            actions.append(pdfBtn);
-          }
-
-          if (idx === 0 && !preview.srcdoc) {
-            preview.srcdoc = entry.html;
-            previewLabel.textContent = entry.filename;
-          }
-        }
-
-        row.append(left, actions);
-        resultsEl.appendChild(row);
-      });
-    }
-
-    document.getElementById('runBtn').addEventListener('click', async () => {
-      const files = Array.from(document.getElementById('pdfFiles').files || []);
-      if (!files.length) {
-        alert('Please choose at least one PDF file.');
-        return;
-      }
-
-      const includePdf = document.getElementById('includePdf').checked;
-      const runBtn = document.getElementById('runBtn');
-      runBtn.disabled = true;
-      statusEl.className = 'status';
-      statusEl.textContent = `Processing ${files.length} file(s)... this can take a while.`;
-      preview.srcdoc = '';
-      previewLabel.textContent = 'Waiting for result';
-
-      const formData = new FormData();
-      files.forEach((file) => formData.append('files', file));
-
-      try {
-        const response = await fetch(`/process/pdfs?include_pdf=${includePdf}`, {
-          method: 'POST',
-          headers: authHeaders(),
-          body: formData
-        });
-
-        const contentType = response.headers.get('content-type') || '';
-        let data;
-        if (contentType.includes('application/json')) {
-          data = await response.json();
-        } else {
-          const rawText = await response.text();
-          const snippet = rawText.replace(/\s+/g, ' ').trim().slice(0, 120);
-          throw new Error(`Expected JSON response but received: ${snippet || 'empty response'}`);
-        }
-
-        if (!response.ok) {
-          throw new Error(data.detail || 'Request failed');
-        }
-
-        latest = data.results || [];
-        const failed = latest.filter(item => item.error).length;
-        renderResults();
-
-        statusEl.className = failed ? 'status error' : 'status success';
-        statusEl.textContent = failed
-          ? `Completed with ${failed} failed file(s).`
-          : `Done. ${latest.length} file(s) processed successfully.`;
-      } catch (err) {
-        statusEl.className = 'status error';
-        statusEl.textContent = `Error: ${err.message}`;
-      } finally {
-        runBtn.disabled = false;
-      }
+  setStage('stage2', 'running');
+  try {
+    setStatus('Running stage 2 API transform using Sonnet model...');
+    const response = await fetch('/stage/transform', {
+      method:'POST',
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ items })
     });
-  </script>
+    const data = await parseResponse(response);
+    stageState.transformed = data.results || [];
+    const failed = stageState.transformed.filter(x => x.status === 'error').length;
+    if (failed === stageState.transformed.length) throw new Error('All files failed in stage 2.');
+    setStage('stage2', failed ? 'error' : 'success');
+    setStatus(`Stage 2 completed. Success: ${stageState.transformed.length - failed}, Failed: ${failed}. Click Proceed for Stage 3.`, !!failed);
+    document.getElementById('runStage3Btn').disabled = false;
+  } catch (err) {
+    setStage('stage2', 'error');
+    setStatus(`Stage 2 failed: ${err.message}`, true);
+  }
+});
+
+document.getElementById('runStage3Btn').addEventListener('click', async () => {
+  const items = stageState.transformed.filter(x => x.status === 'success').map(x => ({ filename:x.filename, kreditlab_json:x.kreditlab_json }));
+  if (!items.length) return alert('No successful stage 2 data found.');
+
+  setStage('stage3', 'running');
+  try {
+    setStatus('Rendering HTML in stage 3...');
+    const response = await fetch('/stage/render', {
+      method:'POST',
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ items, include_pdf: document.getElementById('includePdf').checked })
+    });
+    const data = await parseResponse(response);
+    stageState.rendered = data.results || [];
+    const failed = stageState.rendered.filter(x => x.status === 'error').length;
+    setStage('stage3', failed ? 'error' : 'success');
+    renderResults();
+    setStatus(`Stage 3 completed. Success: ${stageState.rendered.length - failed}, Failed: ${failed}.`, !!failed);
+  } catch (err) {
+    setStage('stage3', 'error');
+    setStatus(`Stage 3 failed: ${err.message}`, true);
+  }
+});
+</script>
 </body>
 </html>

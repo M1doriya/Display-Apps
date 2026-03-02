@@ -16,7 +16,7 @@ Deploy from repository root as one Railway service.
 - `TENSORLAKE_API_KEY` (required)
 - `APP_TOKEN` (optional, if set then POST endpoints require `Authorization: Bearer <APP_TOKEN>`)
 - `CORS_ALLOW_ORIGINS` (optional comma-separated allowlist; defaults to `*`)
-- `ANTHROPIC_MODEL` (optional, default `claude-opus-4-1-20250805`; if invalid, app retries with this fallback automatically)
+- `ANTHROPIC_MODEL` (optional, default `claude-3-5-sonnet-20241022`; if invalid, app retries with `claude-opus-4-1-20250805`)
 
 ## Railway build/run
 This repo includes:
@@ -52,6 +52,15 @@ Open `http://localhost:8000` for upload UI.
   - returns array with per-file success/error entries
 - `POST /render/html`
   - body: `{"data": <kreditlab_json>}`
+- `POST /stage/tensorlake`
+  - multipart form with `files` (one or many PDFs)
+  - returns extraction output per file (`success`/`error`)
+- `POST /stage/transform`
+  - body: `{"items": [{"filename": "...", "extraction_result": {...}}]}`
+  - transforms extracted data to KreditLab JSON per file
+- `POST /stage/render`
+  - body: `{"items": [{"filename": "...", "kreditlab_json": {...}}], "include_pdf": false}`
+  - renders HTML (and optional PDF) per file
 
 ## curl examples
 ```bash

@@ -1,5 +1,4 @@
 import base64
-import json
 import os
 from pathlib import Path
 from typing import Literal, Optional
@@ -10,7 +9,13 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
-from pipeline import generate_full_html, process_pdf
+from pipeline import (
+    convert_html_to_pdf,
+    extract_with_tensorlake,
+    generate_full_html,
+    process_pdf,
+    transform_to_kreditlab_json,
+)
 
 app = FastAPI(title="Display-Apps Integrated Pipeline", version="1.0.0")
 BASE_DIR = Path(__file__).resolve().parent
@@ -28,6 +33,25 @@ app.add_middleware(
 
 class RenderHTMLRequest(BaseModel):
     data: dict
+
+
+class StageTransformItem(BaseModel):
+    filename: str
+    extraction_result: dict
+
+
+class StageTransformRequest(BaseModel):
+    items: list[StageTransformItem]
+
+
+class StageRenderItem(BaseModel):
+    filename: str
+    kreditlab_json: dict
+
+
+class StageRenderRequest(BaseModel):
+    items: list[StageRenderItem]
+    include_pdf: bool = False
 
 
 def require_optional_token(authorization: Optional[str] = Header(default=None)) -> None:
@@ -108,15 +132,109 @@ def render_html_endpoint(body: RenderHTMLRequest, _: None = Depends(require_opti
     return {"html": html}
 
 
+@app.post("/stage/tensorlake")
+async def stage_tensorlake_endpoint(
+    files: list[UploadFile] = File(...),
+    _: None = Depends(require_optional_token),
+):
+    if not files:
+        raise HTTPException(status_code=400, detail="Please upload at least one PDF")
+
+    results = []
+    for upload in files:
+        try:
+            payload = await _read_validated_pdf(upload)
+            extraction_result = extract_with_tensorlake(payload)
+            results.append(
+                {
+                    "filename": upload.filename,
+                    "status": "success",
+                    "extraction_result": extraction_result,
+                }
+            )
+        except HTTPException as exc:
+            results.append({"filename": upload.filename, "status": "error", "error": exc.detail})
+        except Exception as exc:
+            results.append({"filename": upload.filename, "status": "error", "error": f"Tensorlake failed: {exc}"})
+
+    return {"results": results}
+
+
+@app.post("/stage/transform")
+def stage_transform_endpoint(body: StageTransformRequest, _: None = Depends(require_optional_token)):
+    if not body.items:
+        raise HTTPException(status_code=400, detail="No stage payload supplied")
+
+    results = []
+    for item in body.items:
+        try:
+            kreditlab_json = transform_to_kreditlab_json(item.extraction_result)
+            results.append(
+                {
+                    "filename": item.filename,
+                    "status": "success",
+                    "kreditlab_json": kreditlab_json,
+                }
+            )
+        except Exception as exc:
+            results.append(
+                {
+                    "filename": item.filename,
+                    "status": "error",
+                    "error": f"Anthropic transform failed: {exc}",
+                }
+            )
+
+    return {"results": results}
+
+
+@app.post("/stage/render")
+def stage_render_endpoint(body: StageRenderRequest, _: None = Depends(require_optional_token)):
+    if not body.items:
+        raise HTTPException(status_code=400, detail="No stage payload supplied")
+
+    results = []
+    for item in body.items:
+        try:
+            html = generate_full_html(item.kreditlab_json)
+            entry = {
+                "filename": item.filename,
+                "status": "success",
+                "kreditlab_json": item.kreditlab_json,
+                "html": html,
+            }
+            if body.include_pdf:
+                try:
+                    entry["pdf_base64"] = base64.b64encode(convert_html_to_pdf(html)).decode("utf-8")
+                except Exception:
+                    pass
+            results.append(entry)
+        except Exception as exc:
+            results.append(
+                {
+                    "filename": item.filename,
+                    "status": "error",
+                    "error": f"HTML render failed: {exc}",
+                }
+            )
+
+    return {"results": results}
+
+
 async def _process_single_upload(file: UploadFile, include_pdf: bool):
+    payload = await _read_validated_pdf(file)
+
+    try:
+        return process_pdf(payload, include_pdf=include_pdf)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Pipeline failed: {exc}") from exc
+
+
+async def _read_validated_pdf(file: UploadFile) -> bytes:
     if file.content_type not in {"application/pdf", "application/octet-stream"}:
         raise HTTPException(status_code=400, detail="Only PDF uploads are supported")
 
     payload = await file.read()
     if len(payload) > 20 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="File too large. Max supported size is 20MB")
-
-    try:
-        return process_pdf(payload, include_pdf=include_pdf)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Pipeline failed: {exc}") from exc
+    return payload

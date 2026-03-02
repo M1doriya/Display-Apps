@@ -22,7 +22,8 @@ from tensorlake.documentai import (
 )
 
 LOGGER = logging.getLogger(__name__)
-DEFAULT_ANTHROPIC_MODEL = "claude-opus-4-1-20250805"
+DEFAULT_ANTHROPIC_MODEL = "claude-3-5-sonnet-20241022"
+FALLBACK_ANTHROPIC_MODEL = "claude-opus-4-1-20250805"
 REQUIRED_TOP_LEVEL_KEYS = {
     "_schema_info",
     "company_info",
@@ -220,8 +221,8 @@ def _call_anthropic(system_prompt: str, user_content: str, corrective: bool = Fa
 
     requested_model = os.environ.get("ANTHROPIC_MODEL", DEFAULT_ANTHROPIC_MODEL)
     model_candidates = [requested_model]
-    if requested_model != DEFAULT_ANTHROPIC_MODEL:
-        model_candidates.append(DEFAULT_ANTHROPIC_MODEL)
+    if requested_model != FALLBACK_ANTHROPIC_MODEL:
+        model_candidates.append(FALLBACK_ANTHROPIC_MODEL)
 
     last_error: Optional[Exception] = None
     message = None
