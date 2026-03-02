@@ -188,16 +188,74 @@ def extract_with_tensorlake(pdf_bytes: bytes) -> Dict[str, Any]:
             os.remove(temp_pdf_path)
 
 
-def _extract_json_object(text: str) -> Dict[str, Any]:
-    text = text.strip()
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
+def _strip_markdown_fences(text: str) -> str:
+    stripped = text.strip()
+    if stripped.startswith("```") and stripped.endswith("```"):
+        lines = stripped.splitlines()
+        if len(lines) >= 2:
+            return "\n".join(lines[1:-1]).strip()
+    return stripped
+
+
+def _json_object_candidates(text: str) -> list[str]:
+    candidates: list[str] = []
+    stack = 0
+    start: Optional[int] = None
+    in_string = False
+    escaping = False
+
+    for idx, ch in enumerate(text):
+        if in_string:
+            if escaping:
+                escaping = False
+            elif ch == "\\":
+                escaping = True
+            elif ch == '"':
+                in_string = False
+            continue
+
+        if ch == '"':
+            in_string = True
+            continue
+
+        if ch == "{":
+            if stack == 0:
+                start = idx
+            stack += 1
+        elif ch == "}" and stack > 0:
+            stack -= 1
+            if stack == 0 and start is not None:
+                candidates.append(text[start : idx + 1])
+
+    if not candidates:
         start = text.find("{")
         end = text.rfind("}")
         if start >= 0 and end > start:
-            return json.loads(text[start : end + 1])
-        raise
+            candidates.append(text[start : end + 1])
+
+    candidates.sort(key=len, reverse=True)
+    return candidates
+
+
+def _extract_json_object(text: str) -> Dict[str, Any]:
+    cleaned = _strip_markdown_fences(text)
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        pass
+
+    last_error: Optional[Exception] = None
+    for candidate in _json_object_candidates(cleaned):
+        try:
+            parsed = json.loads(candidate)
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError as exc:
+            last_error = exc
+
+    if last_error:
+        raise last_error
+    raise json.JSONDecodeError("No JSON object found in response", cleaned, 0)
 
 
 def _validate_kreditlab_schema(data: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
@@ -289,9 +347,9 @@ def transform_to_kreditlab_json(extraction_result: Dict[str, Any]) -> Dict[str, 
         LOGGER.warning("Failed to parse Anthropic response on first attempt: %s", exc)
 
     corrective_content = (
-        f"Original extracted input:\n{user_content}\n\n"
-        f"Previous invalid output:\n{first_response}\n\n"
-        "Return JSON only; fix schema/JSON."
+        "Your previous output was invalid JSON and/or failed required schema keys. "
+        "Return ONLY a corrected JSON object. No markdown, no explanations.\n\n"
+        f"INVALID_OUTPUT:\n{first_response}"
     )
     second_response = _call_anthropic(system_prompt=system_prompt, user_content=corrective_content, corrective=True)
 
