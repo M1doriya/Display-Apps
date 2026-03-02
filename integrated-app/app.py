@@ -6,6 +6,7 @@ from typing import Literal, Optional
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
@@ -20,6 +21,7 @@ from pipeline import (
 app = FastAPI(title="Display-Apps Integrated Pipeline", version="1.0.0")
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+app.mount("/assets", StaticFiles(directory=str(BASE_DIR.parent)), name="assets")
 
 cors_origins = [origin.strip() for origin in os.environ.get("CORS_ALLOW_ORIGINS", "*").split(",") if origin.strip()]
 app.add_middleware(
