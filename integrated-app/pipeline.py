@@ -22,7 +22,7 @@ from tensorlake.documentai import (
 )
 
 LOGGER = logging.getLogger(__name__)
-DEFAULT_ANTHROPIC_MODEL = "claude-3-5-sonnet-20241022"
+DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-4-6"
 FALLBACK_ANTHROPIC_MODEL = "claude-opus-4-1-20250805"
 REQUIRED_TOP_LEVEL_KEYS = {
     "_schema_info",
