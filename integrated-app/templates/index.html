@@ -6,111 +6,113 @@
   <title>KreditLab Pipeline App</title>
   <style>
     :root {
-      --bg: #edf4ff;
+      --bg: #eff4fb;
       --surface: #ffffff;
-      --surface-soft: #f4f8ff;
-      --text: #111a2d;
-      --muted: #58667f;
-      --primary: #0a3d91;
-      --primary-2: #2d6cdf;
-      --accent: #00b7d4;
-      --success: #148a52;
-      --danger: #cf2642;
-      --warning: #b7791f;
-      --border: #d7e4fb;
-      --ring: rgba(45, 108, 223, 0.2);
-      --shadow: 0 16px 34px rgba(16, 38, 84, 0.1);
+      --surface-soft: #f5f9ff;
+      --text: #0e1a31;
+      --muted: #64748b;
+      --primary: #083a8f;
+      --primary-2: #1d74dd;
+      --accent: #18b6d9;
+      --success: #138a59;
+      --danger: #c52e4b;
+      --warning: #bf7a1c;
+      --border: #dbe6f7;
+      --ring: rgba(29, 116, 221, 0.2);
+      --shadow: 0 22px 40px rgba(8, 25, 58, 0.1);
+      --gridline: rgba(29, 116, 221, 0.08);
     }
 
     [data-theme="dark"] {
-      --bg: #030816;
-      --surface: #0c1427;
-      --surface-soft: #111d35;
-      --text: #e2ecff;
-      --muted: #93a8c8;
-      --primary: #3f88ff;
-      --primary-2: #00b7d4;
-      --accent: #4ce2ff;
-      --success: #2bd37f;
-      --danger: #ff5572;
-      --warning: #ffbd59;
-      --border: #1f3358;
-      --ring: rgba(76, 226, 255, 0.2);
-      --shadow: 0 24px 44px rgba(1, 6, 19, 0.64);
+      --bg: #040b18;
+      --surface: #0d172a;
+      --surface-soft: #12213b;
+      --text: #e6efff;
+      --muted: #8fa7ca;
+      --primary: #4a9bff;
+      --primary-2: #24b8db;
+      --accent: #61dcff;
+      --success: #2fcf84;
+      --danger: #ff6180;
+      --warning: #ffc361;
+      --border: #1f355d;
+      --ring: rgba(97, 220, 255, 0.22);
+      --shadow: 0 28px 50px rgba(1, 8, 22, 0.65);
+      --gridline: rgba(97, 220, 255, 0.08);
     }
 
     * { box-sizing: border-box; }
 
     body {
       margin: 0;
-      font-family: "Manrope", Inter, "Segoe UI", Arial, sans-serif;
-      background:
-        radial-gradient(circle at 2% 0%, rgba(45,108,223,.2), transparent 32%),
-        radial-gradient(circle at 102% -4%, rgba(0,183,212,.2), transparent 28%),
-        linear-gradient(180deg, rgba(255,255,255,.35), rgba(255,255,255,0)),
-        var(--bg);
+      font-family: "Inter", "Manrope", "Segoe UI", Arial, sans-serif;
       color: var(--text);
       min-height: 100vh;
-      padding: 26px;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,.5), rgba(255,255,255,0)),
+        radial-gradient(circle at 95% 0%, color-mix(in srgb, var(--accent) 20%, transparent), transparent 40%),
+        radial-gradient(circle at 0% 0%, color-mix(in srgb, var(--primary) 18%, transparent), transparent 36%),
+        var(--bg);
+      padding: 24px;
     }
 
-    .shell {
-      max-width: 1320px;
-      margin: 0 auto;
-    }
+    .shell { max-width: 1240px; margin: 0 auto; }
 
     .app-header {
-      background: linear-gradient(125deg, color-mix(in srgb, var(--surface) 86%, var(--accent) 14%), var(--surface-soft));
       border: 1px solid var(--border);
-      border-radius: 18px;
-      padding: 18px 22px;
+      background:
+        linear-gradient(110deg, color-mix(in srgb, var(--surface) 88%, var(--accent) 12%), color-mix(in srgb, var(--surface) 92%, var(--primary) 8%));
+      border-radius: 20px;
+      padding: 20px 24px;
       display: flex;
       justify-content: space-between;
       align-items: center;
       gap: 16px;
       box-shadow: var(--shadow);
-      margin-bottom: 16px;
+      margin-bottom: 18px;
+      position: relative;
+      overflow: hidden;
+      isolation: isolate;
     }
 
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 14px;
+    .app-header::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background-image: linear-gradient(90deg, var(--gridline) 1px, transparent 1px), linear-gradient(180deg, var(--gridline) 1px, transparent 1px);
+      background-size: 32px 32px;
+      mask-image: linear-gradient(120deg, transparent 15%, rgba(0,0,0,.8) 55%, transparent 100%);
+      z-index: -1;
     }
+
+    .brand { display: flex; align-items: center; gap: 14px; }
 
     .brand img {
-      height: 42px;
+      height: 44px;
       border-radius: 10px;
-      background: rgba(255,255,255,.86);
-      padding: 4px 8px;
+      padding: 5px 8px;
+      background: rgba(255,255,255,.9);
+      border: 1px solid rgba(255,255,255,.35);
     }
 
-    .brand-text h1 {
-      margin: 0;
-      font-size: 1.25rem;
-      letter-spacing: .2px;
-    }
-
-    .brand-text p {
-      margin: 4px 0 0;
-      color: var(--muted);
-      font-size: .9rem;
-    }
+    .brand-text h1 { margin: 0; font-size: 1.24rem; letter-spacing: .01em; }
+    .brand-text p { margin: 5px 0 0; font-size: .92rem; color: var(--muted); max-width: 760px; }
 
     .theme-btn {
       border: 1px solid var(--border);
       color: var(--text);
-      background: linear-gradient(145deg, var(--surface), var(--surface-soft));
+      background: color-mix(in srgb, var(--surface) 78%, var(--accent) 22%);
       padding: 10px 14px;
       border-radius: 10px;
       cursor: pointer;
       font-weight: 700;
+      white-space: nowrap;
     }
 
     .layout {
       display: grid;
+      grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
       gap: 18px;
-      grid-template-columns: minmax(0, 520px);
       align-items: start;
     }
 
@@ -118,34 +120,28 @@
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 18px;
-      padding: 20px;
       box-shadow: var(--shadow);
     }
 
-    .title {
-      margin: 0;
-      font-size: 1.1rem;
-    }
+    .controls-card { padding: 22px; }
+    .aside-card { padding: 20px; }
 
-    .subtitle {
-      margin: 8px 0 16px;
-      color: var(--muted);
-      font-size: .92rem;
-      line-height: 1.45;
-    }
+    .title { margin: 0; font-size: 1.1rem; }
+    .subtitle { margin: 8px 0 18px; color: var(--muted); font-size: .92rem; line-height: 1.45; }
 
-    .field { margin-bottom: 12px; }
-    .field label { font-size: .9rem; color: var(--muted); }
+    .field { margin-bottom: 14px; }
+    .field label { font-size: .88rem; color: var(--muted); font-weight: 600; }
 
     .input, .token-input {
       width: 100%;
+      margin-top: 7px;
       border: 1px solid var(--border);
       border-radius: 12px;
-      padding: 11px 12px;
-      margin-top: 6px;
       background: var(--surface-soft);
       color: var(--text);
+      padding: 11px 12px;
       outline: none;
+      transition: border-color .18s ease, box-shadow .18s ease;
     }
 
     .input:focus, .token-input:focus {
@@ -154,72 +150,75 @@
     }
 
     .check-wrap {
-      margin: 8px 0 14px;
+      margin: 10px 0 16px;
       color: var(--muted);
       font-size: .9rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
     }
 
-    .stage-list { display: grid; gap: 8px; margin: 14px 0 16px; }
-
+    .stage-list { display: grid; gap: 9px; margin: 14px 0 16px; }
     .stage {
       border: 1px solid var(--border);
       border-radius: 12px;
-      padding: 10px 12px;
+      padding: 11px 12px;
       font-size: .9rem;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      background: var(--surface-soft);
+      background: linear-gradient(145deg, var(--surface-soft), color-mix(in srgb, var(--surface-soft) 84%, var(--accent) 16%));
+      font-weight: 600;
     }
 
     .pill {
       padding: 4px 9px;
       border-radius: 999px;
-      background: color-mix(in srgb, var(--surface-soft) 70%, var(--border) 30%);
       color: var(--muted);
+      background: color-mix(in srgb, var(--surface-soft) 72%, var(--border) 28%);
       text-transform: capitalize;
-      font-size: .8rem;
-      font-weight: 600;
+      font-size: .78rem;
+      font-weight: 700;
+      letter-spacing: .01em;
     }
 
     .pill.success { background: color-mix(in srgb, var(--success) 22%, var(--surface)); color: var(--success); }
-    .pill.error { background: color-mix(in srgb, var(--danger) 22%, var(--surface)); color: var(--danger); }
-    .pill.running { background: color-mix(in srgb, var(--primary) 20%, var(--surface)); color: var(--primary); }
+    .pill.error { background: color-mix(in srgb, var(--danger) 24%, var(--surface)); color: var(--danger); }
+    .pill.running { background: color-mix(in srgb, var(--primary) 24%, var(--surface)); color: var(--primary); }
 
     .btn {
       width: 100%;
       border: none;
       border-radius: 12px;
+      padding: 12px;
+      margin-top: 8px;
+      cursor: pointer;
       color: #fff;
       font-weight: 700;
-      padding: 11px;
-      cursor: pointer;
-      margin-top: 8px;
-      background: linear-gradient(135deg, var(--primary), var(--primary-2));
-      box-shadow: 0 10px 22px color-mix(in srgb, var(--primary) 26%, transparent);
+      font-size: .92rem;
+      background: linear-gradient(128deg, var(--primary), var(--primary-2));
+      box-shadow: 0 12px 26px color-mix(in srgb, var(--primary) 32%, transparent);
     }
 
-    .btn.secondary { background: linear-gradient(135deg, #1d2e4b, #284264); }
-    .btn:disabled { opacity: .5; cursor: not-allowed; }
-
-    .status {
-      margin-top: 14px;
-      min-height: 20px;
-      font-size: .9rem;
-      color: var(--muted);
-      font-weight: 600;
+    .btn.secondary {
+      background: linear-gradient(128deg, #223a63, #2b548a);
+      box-shadow: none;
     }
 
+    .btn:disabled { opacity: .52; cursor: not-allowed; }
+
+    .status { margin-top: 14px; min-height: 20px; font-size: .9rem; color: var(--muted); font-weight: 700; }
     .status.success { color: var(--success); }
     .status.error { color: var(--danger); }
 
     .results-title {
       margin: 18px 0 8px;
-      font-size: .92rem;
+      font-size: .78rem;
       color: var(--muted);
-      font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: .08em;
+      letter-spacing: .1em;
+      font-weight: 800;
     }
 
     .result-item {
@@ -230,22 +229,48 @@
       background: var(--surface-soft);
     }
 
-    .result-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
-
+    .result-actions { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 8px; }
     .result-actions button {
       border: 1px solid var(--border);
       background: linear-gradient(145deg, var(--surface), var(--surface-soft));
       color: var(--text);
       border-radius: 9px;
-      padding: 6px 9px;
+      padding: 6px 10px;
       cursor: pointer;
-      font-weight: 600;
+      font-weight: 700;
+      font-size: .82rem;
     }
 
-    @media (max-width: 1080px) {
+    .aside-title { margin: 0 0 8px; font-size: .98rem; }
+    .aside-copy { margin: 0 0 16px; color: var(--muted); font-size: .88rem; line-height: 1.45; }
+
+    .metric-grid { display: grid; gap: 10px; margin-bottom: 16px; }
+    .metric {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 11px;
+      background: linear-gradient(145deg, color-mix(in srgb, var(--surface-soft) 86%, var(--accent) 14%), var(--surface-soft));
+    }
+    .metric span { display: block; color: var(--muted); font-size: .76rem; text-transform: uppercase; letter-spacing: .08em; font-weight: 800; }
+    .metric strong { font-size: 1rem; margin-top: 4px; display: block; }
+
+    .tips {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+      font-size: .86rem;
+      line-height: 1.5;
+    }
+
+    @media (max-width: 1050px) {
       .layout { grid-template-columns: 1fr; }
-      body { padding: 18px; }
-      .app-header { padding: 15px; }
+      .aside-card { order: -1; }
+    }
+
+    @media (max-width: 760px) {
+      body { padding: 16px; }
+      .app-header { padding: 16px; flex-wrap: wrap; }
+      .brand-text h1 { font-size: 1.12rem; }
     }
   </style>
 </head>
@@ -256,16 +281,16 @@
         <img id="brandLogo" src="/assets/KreditLab-light.png" alt="KreditLab logo" />
         <div class="brand-text">
           <h1>KreditLab Financial Statement Workspace</h1>
-      <p>KreditLab-style workspace for extraction, AI transform (Sonnet 4.6), and export-ready report rendering.</p>
+          <p>Enterprise-style processing workspace for extraction, AI transformation, and polished financial report output.</p>
         </div>
       </div>
       <button id="themeToggle" class="theme-btn" type="button">🌙 Dark mode</button>
     </header>
 
     <div class="layout">
-      <section class="card">
+      <section class="card controls-card">
         <h2 class="title">Pipeline Controls</h2>
-        <p class="subtitle">Upload one or more PDFs and run each stage in sequence. Stage status and output files will appear below.</p>
+        <p class="subtitle">Upload one or more PDF statements and process them through each pipeline stage. Outputs are available for immediate download after rendering.</p>
 
         <div class="field">
           <label for="token">Bearer token (optional)</label>
@@ -294,6 +319,22 @@
         <div id="results"></div>
       </section>
 
+      <aside class="card aside-card">
+        <h3 class="aside-title">Workspace Overview</h3>
+        <p class="aside-copy">Designed with a professional KreditLab-inspired visual language: confident blues, clean surfaces, and concise progress signaling.</p>
+
+        <div class="metric-grid">
+          <div class="metric"><span>Stage 1</span><strong>Extraction Engine</strong></div>
+          <div class="metric"><span>Stage 2</span><strong>Structured AI Transform</strong></div>
+          <div class="metric"><span>Stage 3</span><strong>Report Generation</strong></div>
+        </div>
+
+        <ul class="tips">
+          <li>Upload multiple statements to process them in one run.</li>
+          <li>Use dark mode for low-light analyst workflows.</li>
+          <li>Download JSON, HTML, and optional PDF deliverables per file.</li>
+        </ul>
+      </aside>
     </div>
   </div>
 
