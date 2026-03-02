@@ -24,6 +24,7 @@ from tensorlake.documentai import (
 LOGGER = logging.getLogger(__name__)
 DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-4-6"
 FALLBACK_ANTHROPIC_MODEL = "claude-opus-4-1-20250805"
+DEFAULT_ANTHROPIC_MAX_TOKENS = 16384
 REQUIRED_TOP_LEVEL_KEYS = {
     "_schema_info",
     "company_info",
@@ -278,6 +279,7 @@ def _call_anthropic(system_prompt: str, user_content: str, corrective: bool = Fa
     )
 
     requested_model = os.environ.get("ANTHROPIC_MODEL", DEFAULT_ANTHROPIC_MODEL)
+    max_tokens = int(os.environ.get("ANTHROPIC_MAX_TOKENS", DEFAULT_ANTHROPIC_MAX_TOKENS))
     model_candidates = [requested_model]
     if requested_model != FALLBACK_ANTHROPIC_MODEL:
         model_candidates.append(FALLBACK_ANTHROPIC_MODEL)
@@ -288,7 +290,7 @@ def _call_anthropic(system_prompt: str, user_content: str, corrective: bool = Fa
         try:
             message = client.messages.create(
                 model=model_name,
-                max_tokens=8192,
+                max_tokens=max_tokens,
                 system=system_prompt,
                 messages=[
                     {
@@ -335,34 +337,45 @@ def transform_to_kreditlab_json(extraction_result: Dict[str, Any]) -> Dict[str, 
     }
     user_content = json.dumps(user_payload, ensure_ascii=False)
 
-    first_response = _call_anthropic(system_prompt=system_prompt, user_content=user_content)
+    response = _call_anthropic(system_prompt=system_prompt, user_content=user_content)
 
-    try:
-        parsed = _extract_json_object(first_response)
-        valid, error = _validate_kreditlab_schema(parsed)
-        if valid:
-            return parsed
-        LOGGER.warning("Anthropic schema validation failed on first attempt: %s", error)
-    except Exception as exc:
-        LOGGER.warning("Failed to parse Anthropic response on first attempt: %s", exc)
+    parse_error: Optional[Exception] = None
+    schema_error: Optional[str] = None
 
-    corrective_content = (
-        "Your previous output was invalid JSON and/or failed required schema keys. "
-        "Return ONLY a corrected JSON object. No markdown, no explanations.\n\n"
-        f"INVALID_OUTPUT:\n{first_response}"
-    )
-    second_response = _call_anthropic(system_prompt=system_prompt, user_content=corrective_content, corrective=True)
+    for attempt in range(1, 4):
+        try:
+            parsed = _extract_json_object(response)
+            valid, error = _validate_kreditlab_schema(parsed)
+            if valid:
+                return parsed
+            schema_error = error
+            LOGGER.warning("Anthropic schema validation failed on attempt %s: %s", attempt, error)
+        except Exception as exc:
+            parse_error = exc
+            LOGGER.warning("Failed to parse Anthropic response on attempt %s: %s", attempt, exc)
 
-    try:
-        parsed = _extract_json_object(second_response)
-    except Exception as exc:
-        raise RuntimeError(f"Claude response is not valid JSON after retry: {exc}") from exc
+        if attempt == 3:
+            break
 
-    valid, error = _validate_kreditlab_schema(parsed)
-    if not valid:
-        raise RuntimeError(f"Claude response failed schema checks after retry: {error}")
+        corrective_content = (
+            "Your last output was invalid. Re-generate the complete JSON from source data. "
+            "Return ONLY one valid JSON object with all required keys and no markdown fences.\n\n"
+            f"PARSE_ERROR: {parse_error}\n"
+            f"SCHEMA_ERROR: {schema_error}\n\n"
+            "SOURCE_DATA:\n"
+            f"{user_content}"
+        )
+        response = _call_anthropic(
+            system_prompt=system_prompt,
+            user_content=corrective_content,
+            corrective=True,
+        )
 
-    return parsed
+    if parse_error is not None:
+        raise RuntimeError(f"Claude response is not valid JSON after retries: {parse_error}") from parse_error
+    if schema_error is not None:
+        raise RuntimeError(f"Claude response failed schema checks after retries: {schema_error}")
+    raise RuntimeError("Claude response was invalid after retries")
 
 
 def process_pdf(pdf_bytes: bytes, include_pdf: bool = False) -> Dict[str, Any]:
