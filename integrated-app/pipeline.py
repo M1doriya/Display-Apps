@@ -4,6 +4,7 @@ import logging
 import os
 import tempfile
 from pathlib import Path
+from copy import deepcopy
 from typing import Any, Dict, Optional, Tuple
 
 import httpx
@@ -65,6 +66,77 @@ def _load_renderer_module():
 _RENDERER = _load_renderer_module()
 generate_full_html = _RENDERER.generate_full_html
 convert_html_to_pdf = _RENDERER.convert_html_to_pdf
+
+
+def _is_year_key(value: str) -> bool:
+    lower = value.lower()
+    return lower.startswith("year_") or lower.isdigit()
+
+
+def _list_entry_identity(item: Dict[str, Any]) -> Optional[Tuple[Any, ...]]:
+    if not isinstance(item, dict):
+        return None
+
+    for key in ("name", "label", "metric", "id", "period"):
+        if key in item and item.get(key) not in (None, ""):
+            return (key, item.get(key))
+
+    if "note" in item and item.get("note") not in (None, ""):
+        return ("note", item.get("note"))
+    return None
+
+
+def _merge_list(base: list[Any], incoming: list[Any]) -> list[Any]:
+    merged = deepcopy(base)
+    indexed: Dict[Tuple[Any, ...], int] = {}
+
+    for idx, item in enumerate(merged):
+        identity = _list_entry_identity(item)
+        if identity is not None:
+            indexed[identity] = idx
+
+    for item in incoming:
+        identity = _list_entry_identity(item)
+        if identity is not None and identity in indexed and isinstance(merged[indexed[identity]], dict):
+            merged[indexed[identity]] = _merge_structure(merged[indexed[identity]], item)
+        else:
+            merged.append(deepcopy(item))
+            if identity is not None:
+                indexed[identity] = len(merged) - 1
+
+    return merged
+
+
+def _merge_structure(base: Any, incoming: Any) -> Any:
+    if isinstance(base, dict) and isinstance(incoming, dict):
+        merged = deepcopy(base)
+        for key, incoming_value in incoming.items():
+            if key not in merged:
+                merged[key] = deepcopy(incoming_value)
+                continue
+
+            current_value = merged[key]
+            if isinstance(current_value, (dict, list)) and isinstance(incoming_value, type(current_value)):
+                merged[key] = _merge_structure(current_value, incoming_value)
+            elif _is_year_key(str(key)) or current_value in (None, "", [], {}):
+                merged[key] = deepcopy(incoming_value)
+        return merged
+
+    if isinstance(base, list) and isinstance(incoming, list):
+        return _merge_list(base, incoming)
+
+    return deepcopy(incoming)
+
+
+def merge_kreditlab_json_records(records: list[Dict[str, Any]]) -> Dict[str, Any]:
+    if not records:
+        raise ValueError("At least one KreditLab JSON record is required")
+
+    merged = deepcopy(records[0])
+    for record in records[1:]:
+        merged = _merge_structure(merged, record)
+
+    return merged
 
 
 def upload_file_v2(path: str, api_key: str) -> str:

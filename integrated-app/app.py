@@ -16,6 +16,7 @@ from pipeline import (
     generate_full_html,
     process_pdf,
     transform_to_kreditlab_json,
+    merge_kreditlab_json_records,
 )
 
 app = FastAPI(title="Display-Apps Integrated Pipeline", version="1.0.0")
@@ -52,6 +53,11 @@ class StageRenderItem(BaseModel):
 
 
 class StageRenderRequest(BaseModel):
+    items: list[StageRenderItem]
+    include_pdf: bool = False
+
+
+class StageMergeRequest(BaseModel):
     items: list[StageRenderItem]
     include_pdf: bool = False
 
@@ -221,6 +227,33 @@ def stage_render_endpoint(body: StageRenderRequest, _: None = Depends(require_op
             )
 
     return {"results": results}
+
+
+@app.post("/stage/merge-render")
+def stage_merge_render_endpoint(body: StageMergeRequest, _: None = Depends(require_optional_token)):
+    if not body.items:
+        raise HTTPException(status_code=400, detail="No stage payload supplied")
+
+    try:
+        merged_json = merge_kreditlab_json_records([item.kreditlab_json for item in body.items])
+        html = generate_full_html(merged_json)
+
+        entry = {
+            "filename": "merged-report",
+            "source_filenames": [item.filename for item in body.items],
+            "status": "success",
+            "kreditlab_json": merged_json,
+            "html": html,
+        }
+        if body.include_pdf:
+            try:
+                entry["pdf_base64"] = base64.b64encode(convert_html_to_pdf(html)).decode("utf-8")
+            except Exception:
+                pass
+
+        return {"result": entry}
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Merge render failed: {exc}") from exc
 
 
 async def _process_single_upload(file: UploadFile, include_pdf: bool):
