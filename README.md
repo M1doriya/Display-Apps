@@ -61,6 +61,9 @@ Open `http://localhost:8000` for upload UI.
 - `POST /stage/render`
   - body: `{"items": [{"filename": "...", "kreditlab_json": {...}}], "include_pdf": false}`
   - renders HTML (and optional PDF) per file
+- `POST /stage/merge-render`
+  - body: `{"items": [{"filename": "...", "kreditlab_json": {...}}], "include_pdf": false}`
+  - merges all input KreditLab JSON payloads into a single combined multi-year record and renders one HTML (and optional PDF)
 
 ## curl examples
 ```bash

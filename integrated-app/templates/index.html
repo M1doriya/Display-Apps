@@ -649,6 +649,10 @@
 
             <div class="options-row">
               <label class="check">
+                <input id="mergeReports" type="checkbox" />
+                Merge all successful files into one combined report (Stage 3)
+              </label>
+              <label class="check">
                 <input id="includePdf" type="checkbox" />
                 Include generated PDF output (Stage 3)
               </label>
@@ -719,6 +723,7 @@
           <ul class="tips">
             <li>Stage 2 uses only files that succeeded in Stage 1.</li>
             <li>Stage 3 uses only files that succeeded in Stage 2.</li>
+            <li>Enable “Merge all successful files” to produce one HTML across uploaded years/files.</li>
             <li>Errors are grouped by stage to speed up debugging.</li>
           </ul>
         </div>
@@ -948,22 +953,29 @@ document.getElementById('runStage3Btn').addEventListener('click', async () => {
   setStage('stage3', 'running');
 
   try {
-    setStatus('Running Stage 3 (HTML render)…');
-    const response = await fetch('/stage/render', {
+    const mergeEnabled = document.getElementById('mergeReports').checked;
+    setStatus(`Running Stage 3 (${mergeEnabled ? 'merge + render' : 'HTML render'})…`);
+
+    const endpoint = mergeEnabled ? '/stage/merge-render' : '/stage/render';
+    const response = await fetch(endpoint, {
       method: 'POST',
       headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ items, include_pdf: document.getElementById('includePdf').checked }),
     });
     const data = await parseResponse(response);
 
-    stageState.rendered = data.results || [];
+    stageState.rendered = mergeEnabled ? [data.result] : (data.results || []);
     renderStageErrors('Stage 3 errors', stageState.rendered);
 
     const failed = stageState.rendered.filter(x => x.status === 'error').length;
     setStage('stage3', failed ? 'error' : 'success');
 
     renderResults();
-    setStatus(`Stage 3 completed. Success: ${stageState.rendered.length - failed}, Failed: ${failed}.`, !!failed);
+    if (mergeEnabled && !failed) {
+      setStatus(`Stage 3 completed. Combined report created from ${items.length} files.`, false);
+    } else {
+      setStatus(`Stage 3 completed. Success: ${stageState.rendered.length - failed}, Failed: ${failed}.`, !!failed);
+    }
   } catch (err) {
     setStage('stage3', 'error');
     setStatus(`Stage 3 failed: ${err.message}`, true);
