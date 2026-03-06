@@ -57,7 +57,8 @@ Open `http://localhost:8000` for upload UI.
   - returns extraction output per file (`success`/`error`)
 - `POST /stage/transform`
   - body: `{"items": [{"filename": "...", "extraction_result": {...}}]}`
-  - transforms extracted data to KreditLab JSON per file
+  - with one item: transforms to KreditLab JSON for that file
+  - with multiple items: combines all extraction payloads into one Claude request and returns one combined KreditLab JSON (`combined-report`)
 - `POST /stage/render`
   - body: `{"items": [{"filename": "...", "kreditlab_json": {...}}], "include_pdf": false}`
   - renders HTML (and optional PDF) per file

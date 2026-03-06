@@ -6,6 +6,7 @@ import tempfile
 from pathlib import Path
 from copy import deepcopy
 from typing import Any, Dict, Optional, Tuple
+import re
 
 import httpx
 from anthropic import Anthropic
@@ -136,7 +137,107 @@ def merge_kreditlab_json_records(records: list[Dict[str, Any]]) -> Dict[str, Any
     for record in records[1:]:
         merged = _merge_structure(merged, record)
 
-    return merged
+    return _limit_to_latest_periods(merged, max_periods=3)
+
+
+def _extract_period_sort_key(period_key: str, label: str) -> Tuple[int, int, int, str]:
+    raw = f"{period_key} {label}"
+    years = re.findall(r"(20\d{2})", raw)
+    year = int(years[-1]) if years else 0
+
+    month = 12
+    month_match = re.search(
+        r"\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\b",
+        label,
+        re.IGNORECASE,
+    )
+    if month_match:
+        month_map = {
+            "jan": 1,
+            "feb": 2,
+            "mar": 3,
+            "apr": 4,
+            "may": 5,
+            "jun": 6,
+            "jul": 7,
+            "aug": 8,
+            "sep": 9,
+            "oct": 10,
+            "nov": 11,
+            "dec": 12,
+        }
+        month = month_map[month_match.group(1).lower()[:3]]
+
+    label_lower = label.lower()
+    if "ytd" in label_lower or "ma" in label_lower:
+        source_rank = 2
+    elif "audited" in label_lower or period_key.lower().startswith("fy"):
+        source_rank = 1
+    else:
+        source_rank = 0
+
+    return (year, month, source_rank, period_key)
+
+
+def _prune_period_keys(value: Any, keep_periods: set[str], all_periods: set[str]) -> Any:
+    if isinstance(value, dict):
+        pruned: Dict[str, Any] = {}
+        for key, child in value.items():
+            if key in all_periods and key not in keep_periods:
+                continue
+            pruned[key] = _prune_period_keys(child, keep_periods, all_periods)
+        return pruned
+    if isinstance(value, list):
+        return [_prune_period_keys(item, keep_periods, all_periods) for item in value]
+    return value
+
+
+def _limit_to_latest_periods(record: Dict[str, Any], max_periods: int = 3) -> Dict[str, Any]:
+    company = record.get("company_info", {})
+    periods = company.get("periods_analyzed", {})
+    if not isinstance(periods, dict) or len(periods) <= max_periods:
+        return record
+
+    ranked = sorted(
+        periods.items(),
+        key=lambda kv: _extract_period_sort_key(kv[0], str(kv[1])),
+        reverse=True,
+    )
+    keep_keys = [key for key, _ in ranked[:max_periods]]
+
+    trimmed = deepcopy(record)
+    trimmed["company_info"]["periods_analyzed"] = {key: periods[key] for key in keep_keys}
+
+    keep_set = set(keep_keys)
+    all_set = set(periods.keys())
+    return _prune_period_keys(trimmed, keep_set, all_set)
+
+
+def _combine_extraction_results(extraction_results: list[Dict[str, Any]]) -> Dict[str, Any]:
+    if not extraction_results:
+        raise ValueError("At least one extraction result is required")
+
+    if len(extraction_results) == 1:
+        return extraction_results[0]
+
+    combined_text_parts: list[str] = []
+    combined_tables: list[Dict[str, Any]] = []
+
+    for idx, item in enumerate(extraction_results, start=1):
+        combined_text_parts.append(f"\n\n===== SOURCE DOCUMENT {idx} =====\n")
+        combined_text_parts.append(item.get("full_text_with_tables", ""))
+
+        tables = item.get("tables_json", {}).get("tables", [])
+        for table in tables:
+            remapped = deepcopy(table)
+            remapped["source_document"] = idx
+            combined_tables.append(remapped)
+
+    return {
+        "full_text_output": "\n".join(combined_text_parts),
+        "full_text_with_tables": "\n".join(combined_text_parts),
+        "tables_json": {"tables": combined_tables},
+    }
 
 
 def upload_file_v2(path: str, api_key: str) -> str:
@@ -419,7 +520,7 @@ def transform_to_kreditlab_json(extraction_result: Dict[str, Any]) -> Dict[str, 
             parsed = _extract_json_object(response)
             valid, error = _validate_kreditlab_schema(parsed)
             if valid:
-                return parsed
+                return _limit_to_latest_periods(parsed, max_periods=3)
             schema_error = error
             LOGGER.warning("Anthropic schema validation failed on attempt %s: %s", attempt, error)
         except Exception as exc:
@@ -467,3 +568,8 @@ def process_pdf(pdf_bytes: bytes, include_pdf: bool = False) -> Dict[str, Any]:
             LOGGER.warning("PDF conversion failed: %s", exc)
 
     return result
+
+
+def transform_multiple_extractions_to_kreditlab_json(extraction_results: list[Dict[str, Any]]) -> Dict[str, Any]:
+    combined = _combine_extraction_results(extraction_results)
+    return transform_to_kreditlab_json(combined)
