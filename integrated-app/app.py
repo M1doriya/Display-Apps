@@ -16,6 +16,7 @@ from pipeline import (
     generate_full_html,
     process_pdf,
     transform_to_kreditlab_json,
+    transform_multiple_extractions_to_kreditlab_json,
     merge_kreditlab_json_records,
 )
 
@@ -173,27 +174,55 @@ def stage_transform_endpoint(body: StageTransformRequest, _: None = Depends(requ
     if not body.items:
         raise HTTPException(status_code=400, detail="No stage payload supplied")
 
-    results = []
-    for item in body.items:
+    if len(body.items) == 1:
+        item = body.items[0]
         try:
             kreditlab_json = transform_to_kreditlab_json(item.extraction_result)
-            results.append(
-                {
-                    "filename": item.filename,
-                    "status": "success",
-                    "kreditlab_json": kreditlab_json,
-                }
-            )
+            return {
+                "results": [
+                    {
+                        "filename": item.filename,
+                        "status": "success",
+                        "kreditlab_json": kreditlab_json,
+                    }
+                ]
+            }
         except Exception as exc:
-            results.append(
-                {
-                    "filename": item.filename,
-                    "status": "error",
-                    "error": f"Anthropic transform failed: {exc}",
-                }
-            )
+            return {
+                "results": [
+                    {
+                        "filename": item.filename,
+                        "status": "error",
+                        "error": f"Anthropic transform failed: {exc}",
+                    }
+                ]
+            }
 
-    return {"results": results}
+    try:
+        combined_json = transform_multiple_extractions_to_kreditlab_json(
+            [item.extraction_result for item in body.items]
+        )
+        return {
+            "results": [
+                {
+                    "filename": "combined-report",
+                    "source_filenames": [item.filename for item in body.items],
+                    "status": "success",
+                    "kreditlab_json": combined_json,
+                }
+            ]
+        }
+    except Exception as exc:
+        return {
+            "results": [
+                {
+                    "filename": "combined-report",
+                    "source_filenames": [item.filename for item in body.items],
+                    "status": "error",
+                    "error": f"Anthropic combined transform failed: {exc}",
+                }
+            ]
+        }
 
 
 @app.post("/stage/render")
