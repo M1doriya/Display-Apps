@@ -35,6 +35,15 @@ REQUIRED_TOP_LEVEL_KEYS = {
     "analysis_summary",
 }
 
+TOP_LEVEL_KEY_ALIASES = {
+    "schema_info": "_schema_info",
+    "income_statement": "statement_of_comprehensive_income",
+    "statement_of_income": "statement_of_comprehensive_income",
+    "balance_sheet": "statement_of_financial_position",
+    "financial_position": "statement_of_financial_position",
+    "summary": "analysis_summary",
+}
+
 ROOT_DIR = Path(__file__).resolve().parents[1]
 PROMPT_PATH = ROOT_DIR / "KreditLab_v7_9_updated.txt"
 RENDERER_PATH = ROOT_DIR / "financial-statement-analysis" / "streamlit_financial_report_v7_7.py"
@@ -433,10 +442,24 @@ def _extract_json_object(text: str) -> Dict[str, Any]:
 
 
 def _validate_kreditlab_schema(data: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
+    if not isinstance(data, dict):
+        return False, f"Top-level JSON must be an object, received {type(data).__name__}"
+
     missing = sorted(REQUIRED_TOP_LEVEL_KEYS - set(data.keys()))
     if missing:
         return False, f"Missing required top-level keys: {', '.join(missing)}"
     return True, None
+
+
+def _normalize_top_level_aliases(data: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(data, dict):
+        return data
+
+    normalized = dict(data)
+    for alias, canonical in TOP_LEVEL_KEY_ALIASES.items():
+        if canonical not in normalized and alias in normalized:
+            normalized[canonical] = normalized[alias]
+    return normalized
 
 
 def _extract_schema_candidate(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -448,8 +471,25 @@ def _extract_schema_candidate(data: Dict[str, Any]) -> Dict[str, Any]:
     top-level keys, otherwise falls back to the original root object.
     """
 
-    if not isinstance(data, dict):
+    if isinstance(data, list):
+        for item in data:
+            if isinstance(item, (dict, list)):
+                candidate = _extract_schema_candidate(item)
+                valid, _ = _validate_kreditlab_schema(candidate)
+                if valid:
+                    return candidate
         return data
+
+    if not isinstance(data, dict):
+        if isinstance(data, str):
+            try:
+                parsed = _extract_json_object(data)
+                return _extract_schema_candidate(parsed)
+            except Exception:
+                return data
+        return data
+
+    data = _normalize_top_level_aliases(data)
 
     valid, _ = _validate_kreditlab_schema(data)
     if valid:
@@ -469,10 +509,11 @@ def _extract_schema_candidate(data: Dict[str, Any]) -> Dict[str, Any]:
         seen.add(current_id)
 
         if isinstance(current, dict):
-            valid, _ = _validate_kreditlab_schema(current)
+            normalized = _normalize_top_level_aliases(current)
+            valid, _ = _validate_kreditlab_schema(normalized)
             if valid:
-                return current
-            stack.extend(current.values())
+                return normalized
+            stack.extend(normalized.values())
         else:
             stack.extend(current)
 
