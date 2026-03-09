@@ -439,6 +439,46 @@ def _validate_kreditlab_schema(data: Dict[str, Any]) -> Tuple[bool, Optional[str
     return True, None
 
 
+def _extract_schema_candidate(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Return the dict most likely to be the actual KreditLab payload.
+
+    Claude occasionally wraps the target JSON in outer envelopes such as
+    {"result": {...}} or {"kreditlab_json": {...}}. This helper walks nested
+    dict/list values and returns the first object that satisfies required
+    top-level keys, otherwise falls back to the original root object.
+    """
+
+    if not isinstance(data, dict):
+        return data
+
+    valid, _ = _validate_kreditlab_schema(data)
+    if valid:
+        return data
+
+    stack: list[Any] = [data]
+    seen: set[int] = set()
+
+    while stack:
+        current = stack.pop()
+        if not isinstance(current, (dict, list)):
+            continue
+
+        current_id = id(current)
+        if current_id in seen:
+            continue
+        seen.add(current_id)
+
+        if isinstance(current, dict):
+            valid, _ = _validate_kreditlab_schema(current)
+            if valid:
+                return current
+            stack.extend(current.values())
+        else:
+            stack.extend(current)
+
+    return data
+
+
 def _call_anthropic(system_prompt: str, user_content: str, corrective: bool = False) -> str:
     anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not anthropic_api_key:
@@ -521,7 +561,7 @@ def transform_to_kreditlab_json(extraction_result: Dict[str, Any]) -> Dict[str, 
             candidate = _extract_schema_candidate(parsed)
             valid, error = _validate_kreditlab_schema(candidate)
             if valid:
-                return _limit_to_latest_periods(parsed, max_periods=3)
+                return _limit_to_latest_periods(candidate, max_periods=3)
             schema_error = error
             LOGGER.warning("Anthropic schema validation failed on attempt %s: %s", attempt, error)
         except Exception as exc:
