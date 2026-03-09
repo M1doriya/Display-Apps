@@ -561,10 +561,15 @@ def _call_anthropic(system_prompt: str, user_content: str, corrective: bool = Fa
         raise RuntimeError("ANTHROPIC_API_KEY environment variable is required")
 
     client = Anthropic(api_key=anthropic_api_key)
+    required_key_list = ", ".join(sorted(REQUIRED_TOP_LEVEL_KEYS))
     assistant_instruction = (
-        "Return ONLY valid JSON. No markdown fences, no explanations, no extra text."
+        "Return ONLY valid JSON. No markdown fences, no explanations, no extra text. "
+        f"The top-level object MUST contain these keys: {required_key_list}."
         if not corrective
-        else "Your previous output was invalid. Return ONLY corrected valid JSON matching the required schema."
+        else (
+            "Your previous output was invalid. Return ONLY corrected valid JSON matching the required schema. "
+            f"The top-level object MUST contain these keys: {required_key_list}."
+        )
     )
 
     requested_model = os.environ.get("ANTHROPIC_MODEL", DEFAULT_ANTHROPIC_MODEL)
@@ -618,12 +623,17 @@ def _call_anthropic(system_prompt: str, user_content: str, corrective: bool = Fa
     return "\n".join(chunks).strip()
 
 
-def transform_to_kreditlab_json(extraction_result: Dict[str, Any]) -> Dict[str, Any]:
+def transform_to_kreditlab_json(
+    extraction_result: Dict[str, Any],
+    combination_context: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     system_prompt = _load_system_prompt()
     user_payload = {
         "full_text_with_tables": extraction_result["full_text_with_tables"],
         "tables_json": extraction_result.get("tables_json", {}),
     }
+    if combination_context:
+        user_payload["combination_context"] = combination_context
     user_content = json.dumps(user_payload, ensure_ascii=False)
 
     response = _call_anthropic(system_prompt=system_prompt, user_content=user_content)
@@ -687,6 +697,21 @@ def process_pdf(pdf_bytes: bytes, include_pdf: bool = False) -> Dict[str, Any]:
     return result
 
 
-def transform_multiple_extractions_to_kreditlab_json(extraction_results: list[Dict[str, Any]]) -> Dict[str, Any]:
+def transform_multiple_extractions_to_kreditlab_json(
+    extraction_results: list[Dict[str, Any]],
+    source_filenames: Optional[list[str]] = None,
+) -> Dict[str, Any]:
     combined = _combine_extraction_results(extraction_results)
-    return transform_to_kreditlab_json(combined)
+    combination_context = {
+        "combine_documents": True,
+        "instruction": (
+            "All uploaded documents represent one combined company dataset. "
+            "Merge them into one KreditLab JSON response and align all values by the correct parameter and year "
+            "according to KreditLab_v7_9_updated instructions. "
+            "Do not return separate JSON outputs per source document."
+        ),
+    }
+    if source_filenames:
+        combination_context["source_filenames"] = source_filenames
+
+    return transform_to_kreditlab_json(combined, combination_context=combination_context)

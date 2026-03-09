@@ -200,7 +200,8 @@ def stage_transform_endpoint(body: StageTransformRequest, _: None = Depends(requ
 
     try:
         combined_json = transform_multiple_extractions_to_kreditlab_json(
-            [item.extraction_result for item in body.items]
+            [item.extraction_result for item in body.items],
+            source_filenames=[item.filename for item in body.items],
         )
         return {
             "results": [
