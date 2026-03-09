@@ -1,4 +1,5 @@
 import importlib.util
+import ast
 import json
 import logging
 import os
@@ -427,6 +428,13 @@ def _extract_json_object(text: str) -> Dict[str, Any]:
     except json.JSONDecodeError:
         pass
 
+    try:
+        parsed = ast.literal_eval(cleaned)
+        if isinstance(parsed, dict):
+            return parsed
+    except (ValueError, SyntaxError):
+        pass
+
     last_error: Optional[Exception] = None
     for candidate in _json_object_candidates(cleaned):
         try:
@@ -436,9 +444,36 @@ def _extract_json_object(text: str) -> Dict[str, Any]:
         except json.JSONDecodeError as exc:
             last_error = exc
 
+        repaired = _repair_common_json_issues(candidate)
+        if repaired != candidate:
+            try:
+                parsed = json.loads(repaired)
+                if isinstance(parsed, dict):
+                    return parsed
+            except json.JSONDecodeError as exc:
+                last_error = exc
+
+        try:
+            parsed = ast.literal_eval(candidate)
+            if isinstance(parsed, dict):
+                return parsed
+        except (ValueError, SyntaxError):
+            pass
+
     if last_error:
         raise last_error
     raise json.JSONDecodeError("No JSON object found in response", cleaned, 0)
+
+
+def _repair_common_json_issues(text: str) -> str:
+    repaired = text
+    repaired = re.sub(r"([\{,]\s*)([A-Za-z_][A-Za-z0-9_]*)(\s*:)", r'\1"\2"\3', repaired)
+    repaired = repaired.replace("'", '"')
+    repaired = re.sub(r",\s*([}\]])", r"\1", repaired)
+    repaired = re.sub(r"\bTrue\b", "true", repaired)
+    repaired = re.sub(r"\bFalse\b", "false", repaired)
+    repaired = re.sub(r"\bNone\b", "null", repaired)
+    return repaired
 
 
 def _validate_kreditlab_schema(data: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
