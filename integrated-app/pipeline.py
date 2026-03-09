@@ -35,6 +35,14 @@ REQUIRED_TOP_LEVEL_KEYS = {
     "analysis_summary",
 }
 
+DEFAULT_SCHEMA_SECTIONS: Dict[str, Dict[str, Any]] = {
+    "_schema_info": {},
+    "company_info": {},
+    "statement_of_comprehensive_income": {},
+    "statement_of_financial_position": {},
+    "analysis_summary": {},
+}
+
 ROOT_DIR = Path(__file__).resolve().parents[1]
 PROMPT_PATH = ROOT_DIR / "KreditLab_v7_9_updated.txt"
 RENDERER_PATH = ROOT_DIR / "financial-statement-analysis" / "streamlit_financial_report_v7_7.py"
@@ -439,6 +447,14 @@ def _validate_kreditlab_schema(data: Dict[str, Any]) -> Tuple[bool, Optional[str
     return True, None
 
 
+def _ensure_required_top_level_keys(data: Dict[str, Any]) -> Dict[str, Any]:
+    normalized = deepcopy(data)
+    for key, default_value in DEFAULT_SCHEMA_SECTIONS.items():
+        if key not in normalized:
+            normalized[key] = deepcopy(default_value)
+    return normalized
+
+
 def _call_anthropic(system_prompt: str, user_content: str, corrective: bool = False) -> str:
     anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not anthropic_api_key:
@@ -521,6 +537,14 @@ def transform_to_kreditlab_json(extraction_result: Dict[str, Any]) -> Dict[str, 
             valid, error = _validate_kreditlab_schema(parsed)
             if valid:
                 return _limit_to_latest_periods(parsed, max_periods=3)
+            repaired = _ensure_required_top_level_keys(parsed)
+            repaired_valid, _ = _validate_kreditlab_schema(repaired)
+            if repaired_valid:
+                LOGGER.warning(
+                    "Anthropic response was missing required top-level keys; auto-filled empty sections: %s",
+                    error,
+                )
+                return _limit_to_latest_periods(repaired, max_periods=3)
             schema_error = error
             LOGGER.warning("Anthropic schema validation failed on attempt %s: %s", attempt, error)
         except Exception as exc:
