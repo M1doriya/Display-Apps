@@ -5,7 +5,7 @@ import os
 import tempfile
 from pathlib import Path
 from copy import deepcopy
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, Iterable
 import re
 
 import httpx
@@ -33,6 +33,14 @@ REQUIRED_TOP_LEVEL_KEYS = {
     "statement_of_comprehensive_income",
     "statement_of_financial_position",
     "analysis_summary",
+}
+
+DEFAULT_SCHEMA_SECTIONS: Dict[str, Dict[str, Any]] = {
+    "_schema_info": {},
+    "company_info": {},
+    "statement_of_comprehensive_income": {},
+    "statement_of_financial_position": {},
+    "analysis_summary": {},
 }
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -439,6 +447,62 @@ def _validate_kreditlab_schema(data: Dict[str, Any]) -> Tuple[bool, Optional[str
     return True, None
 
 
+def _ensure_required_top_level_keys(data: Dict[str, Any]) -> Dict[str, Any]:
+    normalized = deepcopy(data)
+    for key, default_value in DEFAULT_SCHEMA_SECTIONS.items():
+        if key not in normalized:
+            normalized[key] = deepcopy(default_value)
+    return normalized
+
+
+
+
+def _contains_required_schema(data: Dict[str, Any]) -> bool:
+    return REQUIRED_TOP_LEVEL_KEYS.issubset(set(data.keys()))
+
+
+def _extract_schema_candidate(data: Dict[str, Any]) -> Dict[str, Any]:
+    if _contains_required_schema(data):
+        return data
+
+    for wrapper_key in ("data", "result", "output", "json"):
+        nested = data.get(wrapper_key)
+        if isinstance(nested, dict) and _contains_required_schema(nested):
+            return nested
+
+    return data
+
+
+def _iter_nested_values(value: Any) -> Iterable[Any]:
+    if isinstance(value, dict):
+        for child in value.values():
+            yield child
+    elif isinstance(value, list):
+        for child in value:
+            yield child
+
+
+def _has_meaningful_content(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, (int, float, bool)):
+        return True
+    if isinstance(value, list):
+        return any(_has_meaningful_content(item) for item in value)
+    if isinstance(value, dict):
+        return any(_has_meaningful_content(item) for item in value.values())
+    return False
+
+
+def _schema_sections_have_content(data: Dict[str, Any]) -> bool:
+    for key in REQUIRED_TOP_LEVEL_KEYS - {"_schema_info"}:
+        section = data.get(key)
+        if _has_meaningful_content(section):
+            return True
+    return False
+
 def _call_anthropic(system_prompt: str, user_content: str, corrective: bool = False) -> str:
     anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not anthropic_api_key:
@@ -518,9 +582,20 @@ def transform_to_kreditlab_json(extraction_result: Dict[str, Any]) -> Dict[str, 
     for attempt in range(1, 4):
         try:
             parsed = _extract_json_object(response)
-            valid, error = _validate_kreditlab_schema(parsed)
+            candidate = _extract_schema_candidate(parsed)
+            valid, error = _validate_kreditlab_schema(candidate)
             if valid:
-                return _limit_to_latest_periods(parsed, max_periods=3)
+                return _limit_to_latest_periods(candidate, max_periods=3)
+
+            repaired = _ensure_required_top_level_keys(candidate)
+            repaired_valid, _ = _validate_kreditlab_schema(repaired)
+            if repaired_valid and _schema_sections_have_content(repaired) and attempt == 3:
+                LOGGER.warning(
+                    "Anthropic response still missed required sections after retries; returning partial data with empty defaults: %s",
+                    error,
+                )
+                return _limit_to_latest_periods(repaired, max_periods=3)
+
             schema_error = error
             LOGGER.warning("Anthropic schema validation failed on attempt %s: %s", attempt, error)
         except Exception as exc:
