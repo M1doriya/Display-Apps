@@ -5,7 +5,7 @@ import os
 import tempfile
 from pathlib import Path
 from copy import deepcopy
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, Iterable
 import re
 
 import httpx
@@ -534,7 +534,8 @@ def transform_to_kreditlab_json(extraction_result: Dict[str, Any]) -> Dict[str, 
     for attempt in range(1, 4):
         try:
             parsed = _extract_json_object(response)
-            valid, error = _validate_kreditlab_schema(parsed)
+            candidate = _extract_schema_candidate(parsed)
+            valid, error = _validate_kreditlab_schema(candidate)
             if valid:
                 return _limit_to_latest_periods(parsed, max_periods=3)
             repaired = _ensure_required_top_level_keys(parsed)
