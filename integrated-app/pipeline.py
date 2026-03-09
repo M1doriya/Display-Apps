@@ -701,17 +701,30 @@ def transform_multiple_extractions_to_kreditlab_json(
     extraction_results: list[Dict[str, Any]],
     source_filenames: Optional[list[str]] = None,
 ) -> Dict[str, Any]:
-    combined = _combine_extraction_results(extraction_results)
-    combination_context = {
-        "combine_documents": True,
-        "instruction": (
-            "All uploaded documents represent one combined company dataset. "
-            "Merge them into one KreditLab JSON response and align all values by the correct parameter and year "
-            "according to KreditLab_v7_9_updated instructions. "
-            "Do not return separate JSON outputs per source document."
-        ),
-    }
-    if source_filenames:
-        combination_context["source_filenames"] = source_filenames
+    if not extraction_results:
+        raise ValueError("At least one extraction result is required")
 
-    return transform_to_kreditlab_json(combined, combination_context=combination_context)
+    transformed_records: list[Dict[str, Any]] = []
+    for idx, extraction in enumerate(extraction_results):
+        filename = None
+        if source_filenames and idx < len(source_filenames):
+            filename = source_filenames[idx]
+
+        combination_context = {
+            "combine_documents": True,
+            "source_document_index": idx + 1,
+            "total_source_documents": len(extraction_results),
+            "instruction": (
+                "This source document is part of a larger combined company dataset. "
+                "Generate ONE valid KreditLab JSON object for this source while strictly following "
+                "KreditLab_v7_9_updated instructions, schema, and numeric formatting."
+            ),
+        }
+        if filename:
+            combination_context["source_filename"] = filename
+
+        transformed_records.append(
+            transform_to_kreditlab_json(extraction, combination_context=combination_context)
+        )
+
+    return merge_kreditlab_json_records(transformed_records)
