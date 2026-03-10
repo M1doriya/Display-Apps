@@ -15,6 +15,7 @@ Deploy from repository root as one Railway service.
 - `ANTHROPIC_API_KEY` (required)
 - `TENSORLAKE_API_KEY` (required)
 - `APP_TOKEN` (optional, if set then POST endpoints require `Authorization: Bearer <APP_TOKEN>`)
+- Built-in HTTP Basic auth for UI/API: username `admin`, password `xs2admin`
 - `CORS_ALLOW_ORIGINS` (optional comma-separated allowlist; defaults to `*`)
 - `ANTHROPIC_MODEL` (optional, default `claude-sonnet-4-6`; if invalid, app retries with `claude-opus-4-1-20250805`)
 
@@ -40,6 +41,7 @@ Open `http://localhost:8000` for upload UI.
 
 ## API endpoints
 - `GET /health` -> `{"status":"ok"}`
+- All endpoints except `GET /health` require HTTP Basic auth (`admin` / `xs2admin`).
 - `POST /process/pdf`
   - multipart form with `file` (PDF)
   - query params:
@@ -73,11 +75,13 @@ curl -s http://localhost:8000/health
 
 # Process PDF (token optional, include header only if APP_TOKEN is configured)
 curl -X POST "http://localhost:8000/process/pdf?return=both" \
+  -u admin:xs2admin \
   -H "Authorization: Bearer $APP_TOKEN" \
   -F "file=@/path/to/file.pdf"
 
 # Render HTML from existing JSON
 curl -X POST "http://localhost:8000/render/html" \
+  -u admin:xs2admin \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $APP_TOKEN" \
   -d '{"data": {"_schema_info": {}, "company_info": {}, "statement_of_comprehensive_income": {}, "statement_of_financial_position": {}, "analysis_summary": {}}}'

@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Literal, Optional
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -24,6 +25,10 @@ app = FastAPI(title="Display-Apps Integrated Pipeline", version="1.0.0")
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 app.mount("/assets", StaticFiles(directory=str(BASE_DIR.parent)), name="assets")
+basic_security = HTTPBasic()
+
+AUTH_USERNAME = "admin"
+AUTH_PASSWORD = "xs2admin"
 
 cors_origins = [origin.strip() for origin in os.environ.get("CORS_ALLOW_ORIGINS", "*").split(",") if origin.strip()]
 app.add_middleware(
@@ -74,13 +79,18 @@ def require_optional_token(authorization: Optional[str] = Header(default=None)) 
         raise HTTPException(status_code=403, detail="Invalid token")
 
 
+def require_basic_auth(credentials: HTTPBasicCredentials = Depends(basic_security)) -> None:
+    if credentials.username != AUTH_USERNAME or credentials.password != AUTH_PASSWORD:
+        raise HTTPException(status_code=401, detail="Invalid basic auth credentials")
+
+
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok"}
 
 
 @app.get("/", response_class=HTMLResponse)
-def index(request: Request):
+def index(request: Request, _: None = Depends(require_basic_auth)):
     return templates.TemplateResponse("index.html", {"request": request})
 
 
@@ -89,6 +99,7 @@ async def process_pdf_endpoint(
     return_mode: Literal["html_only", "json_only", "both"] = Query("both", alias="return"),
     include_pdf: bool = Query(False),
     file: UploadFile = File(...),
+    __: None = Depends(require_basic_auth),
     _: None = Depends(require_optional_token),
 ):
     result = await _process_single_upload(file, include_pdf=include_pdf)
@@ -109,6 +120,7 @@ async def process_pdf_endpoint(
 async def process_pdfs_endpoint(
     include_pdf: bool = Query(False),
     files: list[UploadFile] = File(...),
+    __: None = Depends(require_basic_auth),
     _: None = Depends(require_optional_token),
 ):
     if not files:
@@ -133,7 +145,11 @@ async def process_pdfs_endpoint(
 
 
 @app.post("/render/html")
-def render_html_endpoint(body: RenderHTMLRequest, _: None = Depends(require_optional_token)):
+def render_html_endpoint(
+    body: RenderHTMLRequest,
+    __: None = Depends(require_basic_auth),
+    _: None = Depends(require_optional_token),
+):
     try:
         html = generate_full_html(body.data)
     except Exception as exc:
@@ -144,6 +160,7 @@ def render_html_endpoint(body: RenderHTMLRequest, _: None = Depends(require_opti
 @app.post("/stage/tensorlake")
 async def stage_tensorlake_endpoint(
     files: list[UploadFile] = File(...),
+    __: None = Depends(require_basic_auth),
     _: None = Depends(require_optional_token),
 ):
     if not files:
@@ -170,7 +187,11 @@ async def stage_tensorlake_endpoint(
 
 
 @app.post("/stage/transform")
-def stage_transform_endpoint(body: StageTransformRequest, _: None = Depends(require_optional_token)):
+def stage_transform_endpoint(
+    body: StageTransformRequest,
+    __: None = Depends(require_basic_auth),
+    _: None = Depends(require_optional_token),
+):
     if not body.items:
         raise HTTPException(status_code=400, detail="No stage payload supplied")
 
@@ -227,7 +248,11 @@ def stage_transform_endpoint(body: StageTransformRequest, _: None = Depends(requ
 
 
 @app.post("/stage/render")
-def stage_render_endpoint(body: StageRenderRequest, _: None = Depends(require_optional_token)):
+def stage_render_endpoint(
+    body: StageRenderRequest,
+    __: None = Depends(require_basic_auth),
+    _: None = Depends(require_optional_token),
+):
     if not body.items:
         raise HTTPException(status_code=400, detail="No stage payload supplied")
 
@@ -260,7 +285,11 @@ def stage_render_endpoint(body: StageRenderRequest, _: None = Depends(require_op
 
 
 @app.post("/stage/merge-render")
-def stage_merge_render_endpoint(body: StageMergeRequest, _: None = Depends(require_optional_token)):
+def stage_merge_render_endpoint(
+    body: StageMergeRequest,
+    __: None = Depends(require_basic_auth),
+    _: None = Depends(require_optional_token),
+):
     if not body.items:
         raise HTTPException(status_code=400, detail="No stage payload supplied")
 
