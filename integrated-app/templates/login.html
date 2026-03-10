@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Login • Display Apps</title>
+  <style>
+    body { font-family: Inter, Arial, sans-serif; background:#f4f6fb; margin:0; min-height:100vh; display:grid; place-items:center; }
+    .card { background:#fff; width:min(420px,92vw); border:1px solid #e6e8ee; border-radius:16px; padding:24px; box-shadow:0 18px 40px rgba(15,23,42,.08); }
+    h1 { margin:0 0 6px; font-size:1.4rem; }
+    p { margin:0 0 18px; color:#5b6472; }
+    label { display:block; font-size:.9rem; font-weight:600; margin:10px 0 6px; }
+    input { width:100%; padding:10px 12px; border:1px solid #d7dce5; border-radius:10px; font-size:.95rem; }
+    button { margin-top:16px; width:100%; padding:11px 14px; border:0; border-radius:10px; background:#0b0f16; color:#fff; font-weight:700; cursor:pointer; }
+    .error { margin-top:12px; color:#b91c1c; font-size:.9rem; }
+    .hint { margin-top:12px; font-size:.8rem; color:#7b8597; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>Display Apps Login</h1>
+    <p>Please sign in before using the app.</p>
+    <form method="post" action="/login">
+      <label for="username">Username</label>
+      <input id="username" name="username" type="text" required autocomplete="username" />
+
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" required autocomplete="current-password" />
+
+      <button type="submit">Sign in</button>
+    </form>
+    {% if error %}
+      <div class="error">{{ error }}</div>
+    {% endif %}
+  </main>
+</body>
+</html>

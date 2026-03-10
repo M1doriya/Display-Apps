@@ -1,11 +1,12 @@
 import base64
 import os
+import secrets
 from pathlib import Path
 from typing import Literal, Optional
 
-from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -63,15 +64,32 @@ class StageMergeRequest(BaseModel):
     include_pdf: bool = False
 
 
-def require_optional_token(authorization: Optional[str] = Header(default=None)) -> None:
-    expected = os.environ.get("APP_TOKEN")
-    if not expected:
-        return
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing bearer token")
-    token = authorization.split(" ", 1)[1]
-    if token != expected:
-        raise HTTPException(status_code=403, detail="Invalid token")
+AUTH_USERNAME = "admin"
+AUTH_PASSWORD = "xs2admin"
+AUTH_COOKIE_NAME = "display_apps_auth"
+AUTH_COOKIE_VALUE = "authenticated"
+
+
+def _is_valid_basic_auth(authorization: Optional[str]) -> bool:
+    if not authorization or not authorization.startswith("Basic "):
+        return False
+    try:
+        encoded = authorization.split(" ", 1)[1]
+        decoded = base64.b64decode(encoded).decode("utf-8")
+        username, password = decoded.split(":", 1)
+    except Exception:
+        return False
+    return secrets.compare_digest(username, AUTH_USERNAME) and secrets.compare_digest(password, AUTH_PASSWORD)
+
+
+def _is_authenticated(request: Request, authorization: Optional[str] = None) -> bool:
+    cookie_ok = secrets.compare_digest(request.cookies.get(AUTH_COOKIE_NAME, ""), AUTH_COOKIE_VALUE)
+    return cookie_ok or _is_valid_basic_auth(authorization)
+
+
+def require_authenticated_user(request: Request, authorization: Optional[str] = Header(default=None)) -> None:
+    if not _is_authenticated(request, authorization):
+        raise HTTPException(status_code=401, detail="Authentication required")
 
 
 @app.get("/health")
@@ -79,8 +97,37 @@ def health() -> dict:
     return {"status": "ok"}
 
 
+@app.get("/login", response_class=HTMLResponse)
+def login_page(request: Request):
+    return templates.TemplateResponse("login.html", {"request": request, "error": None})
+
+
+@app.post("/login", response_class=HTMLResponse)
+def login_submit(request: Request, username: str = Form(...), password: str = Form(...)):
+    valid_username = secrets.compare_digest(username, AUTH_USERNAME)
+    valid_password = secrets.compare_digest(password, AUTH_PASSWORD)
+
+    if not (valid_username and valid_password):
+        return templates.TemplateResponse(
+            "login.html",
+            {"request": request, "error": "Invalid username or password"},
+            status_code=401,
+        )
+
+    response = RedirectResponse(url="/", status_code=303)
+    response.set_cookie(AUTH_COOKIE_NAME, AUTH_COOKIE_VALUE, httponly=True, samesite="lax")
+    return response
+
+
+@app.post("/logout")
+def logout():
+    response = RedirectResponse(url="/login", status_code=303)
+    response.delete_cookie(AUTH_COOKIE_NAME)
+    return response
+
+
 @app.get("/", response_class=HTMLResponse)
-def index(request: Request):
+def index(request: Request, _: None = Depends(require_authenticated_user)):
     return templates.TemplateResponse("index.html", {"request": request})
 
 
@@ -89,7 +136,7 @@ async def process_pdf_endpoint(
     return_mode: Literal["html_only", "json_only", "both"] = Query("both", alias="return"),
     include_pdf: bool = Query(False),
     file: UploadFile = File(...),
-    _: None = Depends(require_optional_token),
+    _: None = Depends(require_authenticated_user),
 ):
     result = await _process_single_upload(file, include_pdf=include_pdf)
 
@@ -109,7 +156,7 @@ async def process_pdf_endpoint(
 async def process_pdfs_endpoint(
     include_pdf: bool = Query(False),
     files: list[UploadFile] = File(...),
-    _: None = Depends(require_optional_token),
+    _: None = Depends(require_authenticated_user),
 ):
     if not files:
         raise HTTPException(status_code=400, detail="Please upload at least one PDF")
@@ -133,7 +180,7 @@ async def process_pdfs_endpoint(
 
 
 @app.post("/render/html")
-def render_html_endpoint(body: RenderHTMLRequest, _: None = Depends(require_optional_token)):
+def render_html_endpoint(body: RenderHTMLRequest, _: None = Depends(require_authenticated_user)):
     try:
         html = generate_full_html(body.data)
     except Exception as exc:
@@ -144,7 +191,7 @@ def render_html_endpoint(body: RenderHTMLRequest, _: None = Depends(require_opti
 @app.post("/stage/tensorlake")
 async def stage_tensorlake_endpoint(
     files: list[UploadFile] = File(...),
-    _: None = Depends(require_optional_token),
+    _: None = Depends(require_authenticated_user),
 ):
     if not files:
         raise HTTPException(status_code=400, detail="Please upload at least one PDF")
@@ -170,7 +217,7 @@ async def stage_tensorlake_endpoint(
 
 
 @app.post("/stage/transform")
-def stage_transform_endpoint(body: StageTransformRequest, _: None = Depends(require_optional_token)):
+def stage_transform_endpoint(body: StageTransformRequest, _: None = Depends(require_authenticated_user)):
     if not body.items:
         raise HTTPException(status_code=400, detail="No stage payload supplied")
 
@@ -227,7 +274,7 @@ def stage_transform_endpoint(body: StageTransformRequest, _: None = Depends(requ
 
 
 @app.post("/stage/render")
-def stage_render_endpoint(body: StageRenderRequest, _: None = Depends(require_optional_token)):
+def stage_render_endpoint(body: StageRenderRequest, _: None = Depends(require_authenticated_user)):
     if not body.items:
         raise HTTPException(status_code=400, detail="No stage payload supplied")
 
@@ -260,7 +307,7 @@ def stage_render_endpoint(body: StageRenderRequest, _: None = Depends(require_op
 
 
 @app.post("/stage/merge-render")
-def stage_merge_render_endpoint(body: StageMergeRequest, _: None = Depends(require_optional_token)):
+def stage_merge_render_endpoint(body: StageMergeRequest, _: None = Depends(require_authenticated_user)):
     if not body.items:
         raise HTTPException(status_code=400, detail="No stage payload supplied")
 

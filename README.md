@@ -38,6 +38,16 @@ uvicorn app:app --app-dir integrated-app --host 0.0.0.0 --port 8000
 
 Open `http://localhost:8000` for upload UI.
 
+
+## Built-in access authentication
+- The web app now requires login before access.
+- Credentials:
+  - username: `admin`
+  - password: `xs2admin`
+- API requests can authenticate either by:
+  - logging in via `/login` to receive the auth cookie, or
+  - sending HTTP Basic auth for `admin:xs2admin`.
+
 ## API endpoints
 - `GET /health` -> `{"status":"ok"}`
 - `POST /process/pdf`
