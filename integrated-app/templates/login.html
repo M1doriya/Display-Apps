@@ -5,172 +5,33 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Login • Display Apps</title>
   <style>
-    :root {
-      --bg: #f4f6fb;
-      --card: #ffffff;
-      --text: #111827;
-      --muted: #5b6472;
-      --border: #d7dce5;
-      --focus: #2563eb;
-      --cta: #0b0f16;
-      --cta-hover: #1f2937;
-      --error-bg: #fef2f2;
-      --error-border: #fecaca;
-      --error-text: #b91c1c;
-      --tip-bg: #f0f9ff;
-      --tip-border: #bfdbfe;
-      --tip-text: #1e3a8a;
-    }
-
-    * { box-sizing: border-box; }
-
-    body {
-      font-family: Inter, Arial, sans-serif;
-      background: var(--bg);
-      margin: 0;
-      min-height: 100vh;
-      display: grid;
-      place-items: center;
-      color: var(--text);
-      padding: 20px;
-    }
-
-    .card {
-      background: var(--card);
-      width: min(460px, 96vw);
-      border: 1px solid #e6e8ee;
-      border-radius: 16px;
-      padding: 26px;
-      box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
-    }
-
-    .brand {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 0.85rem;
-      font-weight: 700;
-      letter-spacing: 0.01em;
-      background: #eef2ff;
-      color: #3730a3;
-      border-radius: 999px;
-      padding: 6px 10px;
-      margin-bottom: 14px;
-    }
-
-    h1 { margin: 0 0 8px; font-size: 1.45rem; }
-    p { margin: 0; color: var(--muted); line-height: 1.45; }
-
-    form { margin-top: 20px; }
-
-    label {
-      display: block;
-      font-size: 0.9rem;
-      font-weight: 600;
-      margin: 12px 0 6px;
-    }
-
-    input {
-      width: 100%;
-      padding: 11px 12px;
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      font-size: 0.95rem;
-      transition: border-color .15s ease, box-shadow .15s ease;
-    }
-
-    input:focus {
-      outline: none;
-      border-color: var(--focus);
-      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.16);
-    }
-
-    .field-hint {
-      margin: 6px 0 0;
-      color: #6b7280;
-      font-size: 0.8rem;
-    }
-
-    button {
-      margin-top: 16px;
-      width: 100%;
-      padding: 12px 14px;
-      border: 0;
-      border-radius: 10px;
-      background: var(--cta);
-      color: #fff;
-      font-weight: 700;
-      font-size: 0.95rem;
-      cursor: pointer;
-      transition: background .15s ease, transform .06s ease;
-    }
-
-    button:hover { background: var(--cta-hover); }
-    button:active { transform: translateY(1px); }
-
-    .error {
-      margin-top: 14px;
-      border: 1px solid var(--error-border);
-      background: var(--error-bg);
-      color: var(--error-text);
-      font-size: 0.9rem;
-      border-radius: 10px;
-      padding: 10px 12px;
-    }
-
-    .tips {
-      margin-top: 16px;
-      border: 1px solid var(--tip-border);
-      background: var(--tip-bg);
-      border-radius: 10px;
-      padding: 12px;
-    }
-
-    .tips h2 {
-      margin: 0 0 8px;
-      font-size: 0.9rem;
-      color: var(--tip-text);
-    }
-
-    .tips ul {
-      margin: 0;
-      padding-left: 18px;
-      color: #1f3a8a;
-      font-size: 0.82rem;
-      line-height: 1.45;
-    }
+    body { font-family: Inter, Arial, sans-serif; background:#f4f6fb; margin:0; min-height:100vh; display:grid; place-items:center; }
+    .card { background:#fff; width:min(420px,92vw); border:1px solid #e6e8ee; border-radius:16px; padding:24px; box-shadow:0 18px 40px rgba(15,23,42,.08); }
+    h1 { margin:0 0 6px; font-size:1.4rem; }
+    p { margin:0 0 18px; color:#5b6472; }
+    label { display:block; font-size:.9rem; font-weight:600; margin:10px 0 6px; }
+    input { width:100%; padding:10px 12px; border:1px solid #d7dce5; border-radius:10px; font-size:.95rem; }
+    button { margin-top:16px; width:100%; padding:11px 14px; border:0; border-radius:10px; background:#0b0f16; color:#fff; font-weight:700; cursor:pointer; }
+    .error { margin-top:12px; color:#b91c1c; font-size:.9rem; }
+    .hint { margin-top:12px; font-size:.8rem; color:#7b8597; }
   </style>
 </head>
 <body>
   <main class="card">
-    <div class="brand">🔒 Secure Access</div>
-    <h1>Sign in to Display Apps</h1>
-    <p>Use your assigned credentials to continue to the document processing dashboard.</p>
-
+    <h1>Display Apps Login</h1>
+    <p>Please sign in before using the app.</p>
     <form method="post" action="/login">
       <label for="username">Username</label>
-      <input id="username" name="username" type="text" required autocomplete="username" placeholder="Enter your username" autofocus />
-      <p class="field-hint">Usernames are case-sensitive.</p>
+      <input id="username" name="username" type="text" required autocomplete="username" />
 
       <label for="password">Password</label>
-      <input id="password" name="password" type="password" required autocomplete="current-password" placeholder="Enter your password" />
-      <p class="field-hint">If login fails, check for CAPS LOCK or extra spaces.</p>
+      <input id="password" name="password" type="password" required autocomplete="current-password" />
 
       <button type="submit">Sign in</button>
     </form>
-
     {% if error %}
-      <div class="error" role="alert">{{ error }}</div>
+      <div class="error">{{ error }}</div>
     {% endif %}
-
-    <section class="tips" aria-label="Login help">
-      <h2>Having trouble logging in?</h2>
-      <ul>
-        <li>Confirm you're using the correct username and password from your admin.</li>
-        <li>Credentials entered with different letter case won't match.</li>
-        <li>If you still can't access, request a credential reset.</li>
-      </ul>
-    </section>
   </main>
 </body>
 </html>
