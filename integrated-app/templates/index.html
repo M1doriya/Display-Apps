@@ -579,11 +579,82 @@
       .header{ position: static; border-radius: var(--radius-xl); padding: 12px; }
       .nav{ display:none; } /* keep it clean on mobile */
     }
+
+    .login-overlay{
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+      background:
+        radial-gradient(circle at 85% -20%, rgba(14,165,233,.16), transparent 58%),
+        radial-gradient(circle at 10% 0%, rgba(11,15,22,.13), transparent 54%),
+        color-mix(in srgb, var(--bg) 84%, transparent);
+      backdrop-filter: blur(8px);
+    }
+
+    .login-card{
+      width: min(460px, 100%);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xl);
+      background: var(--surface);
+      box-shadow: var(--shadow);
+      padding: 24px;
+    }
+
+    .login-card h2{
+      margin: 10px 0 0;
+      font-size: clamp(1.3rem, 2.2vw, 1.6rem);
+      letter-spacing: -0.02em;
+    }
+
+    .login-card p{
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: .92rem;
+      font-weight: 600;
+    }
+
+    .login-error{
+      margin-top: 10px;
+      color: var(--danger);
+      font-weight: 700;
+      min-height: 20px;
+      font-size: .88rem;
+    }
+
+    .app-shell.locked{
+      pointer-events: none;
+      user-select: none;
+      filter: blur(2px);
+    }
   </style>
 </head>
 
 <body>
-  <div class="shell">
+  <div id="loginOverlay" class="login-overlay" aria-label="Login required">
+    <section class="login-card" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
+      <div class="kicker">Secure access</div>
+      <h2 id="loginTitle">Sign in to continue</h2>
+      <p>Use your internal account credentials before accessing the pipeline controls.</p>
+
+      <form id="loginForm" class="form-grid" style="margin-top:16px">
+        <div class="field">
+          <label for="loginUsername">Username</label>
+          <input id="loginUsername" class="input" autocomplete="username" required />
+        </div>
+        <div class="field">
+          <label for="loginPassword">Password</label>
+          <input id="loginPassword" class="input" type="password" autocomplete="current-password" required />
+        </div>
+        <button class="btn primary" type="submit">Login</button>
+      </form>
+      <div id="loginError" class="login-error" aria-live="polite"></div>
+    </section>
+  </div>
+
+  <div id="appShell" class="shell app-shell locked">
     <header class="header">
       <div class="brand">
         <img id="brandLogo" src="/assets/KreditLab-light.png" alt="KreditLab logo" />
@@ -744,6 +815,16 @@ const statusEl = document.getElementById('status');
 const resultsEl = document.getElementById('results');
 const themeToggle = document.getElementById('themeToggle');
 const brandLogo = document.getElementById('brandLogo');
+const loginOverlay = document.getElementById('loginOverlay');
+const appShell = document.getElementById('appShell');
+const loginForm = document.getElementById('loginForm');
+const loginError = document.getElementById('loginError');
+const loginUsername = document.getElementById('loginUsername');
+const loginPassword = document.getElementById('loginPassword');
+
+const LOGIN_USER = 'admin';
+const LOGIN_PASS = 'xs2admin';
+const AUTH_STORAGE_KEY = 'kreditlab-authenticated';
 
 const stageState = { extracted: [], transformed: [], rendered: [] };
 
@@ -758,6 +839,30 @@ function applyTheme(theme) {
 const savedTheme = localStorage.getItem('kreditlab-theme') || 'light';
 applyTheme(savedTheme);
 themeToggle.addEventListener('click', () => applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'));
+
+function unlockApp() {
+  loginOverlay.style.display = 'none';
+  appShell.classList.remove('locked');
+}
+
+if (sessionStorage.getItem(AUTH_STORAGE_KEY) === 'true') {
+  unlockApp();
+} else {
+  loginUsername.focus();
+}
+
+loginForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  if (loginUsername.value.trim() === LOGIN_USER && loginPassword.value === LOGIN_PASS) {
+    sessionStorage.setItem(AUTH_STORAGE_KEY, 'true');
+    loginError.textContent = '';
+    unlockApp();
+    return;
+  }
+  loginError.textContent = 'Invalid username or password. Please try again.';
+  loginPassword.value = '';
+  loginPassword.focus();
+});
 
 /* =========
    Helpers
