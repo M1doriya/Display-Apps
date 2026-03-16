@@ -28,6 +28,7 @@ LOGGER = logging.getLogger(__name__)
 DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-4-6"
 FALLBACK_ANTHROPIC_MODEL = "claude-opus-4-1-20250805"
 DEFAULT_ANTHROPIC_MAX_TOKENS = 16384
+DEFAULT_STAGE2_INPUT_CHAR_BUDGET = 85000
 REQUIRED_TOP_LEVEL_KEYS = {
     "_schema_info",
     "company_info",
@@ -51,18 +52,85 @@ RENDERER_PATH = ROOT_DIR / "financial-statement-analysis" / "streamlit_financial
 
 
 def _load_system_prompt() -> str:
-    instruction_files = sorted(
-        p for p in ROOT_DIR.glob("*.txt") if "kreditlab" in p.stem.lower()
-    )
-    if not instruction_files:
-        if not PROMPT_PATH.exists():
-            raise RuntimeError(f"Prompt file not found at {PROMPT_PATH}")
-        instruction_files = [PROMPT_PATH]
+    if not PROMPT_PATH.exists():
+        raise RuntimeError(f"Prompt file not found at {PROMPT_PATH}")
+    # Keep prompt scope deterministic and small for lower token usage.
+    return PROMPT_PATH.read_text(encoding="utf-8")
 
-    sections = []
-    for path in instruction_files:
-        sections.append(f"# Instructions from {path.name}\n{path.read_text(encoding='utf-8')}")
-    return "\n\n".join(sections)
+
+def _filter_relevant_lines(text: str, max_lines: int = 700) -> str:
+    keywords = (
+        "revenue",
+        "profit",
+        "loss",
+        "income",
+        "balance",
+        "financial position",
+        "cash flow",
+        "audit",
+        "audited",
+        "management",
+        "asset",
+        "liability",
+        "equity",
+        "borrowings",
+        "ebitda",
+        "tax",
+        "year",
+        "202",
+    )
+    selected: list[str] = []
+    for line in text.splitlines():
+        compact = line.strip()
+        if not compact:
+            continue
+        lower = compact.lower()
+        if any(term in lower for term in keywords):
+            selected.append(compact)
+        if len(selected) >= max_lines:
+            break
+    return "\n".join(selected)
+
+
+def _compact_tables_json(tables_json: Dict[str, Any], max_tables: int = 30, max_rows_per_table: int = 40) -> Dict[str, Any]:
+    tables = tables_json.get("tables", []) if isinstance(tables_json, dict) else []
+    compacted_tables: list[Dict[str, Any]] = []
+    for table in tables[:max_tables]:
+        if not isinstance(table, dict):
+            continue
+        compacted_tables.append(
+            {
+                "page": table.get("page"),
+                "table_index": table.get("table_index"),
+                "source_document": table.get("source_document"),
+                "rows": (table.get("rows") or [])[:max_rows_per_table],
+            }
+        )
+    return {"tables": compacted_tables}
+
+
+def _prepare_stage2_payload(
+    extraction_result: Dict[str, Any],
+    combination_context: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    char_budget = int(os.environ.get("STAGE2_INPUT_CHAR_BUDGET", DEFAULT_STAGE2_INPUT_CHAR_BUDGET))
+    original_text = extraction_result.get("full_text_with_tables", "")
+    relevant_text = _filter_relevant_lines(original_text)
+    if len(relevant_text) > char_budget:
+        relevant_text = relevant_text[:char_budget]
+
+    payload = {
+        "full_text_with_tables": relevant_text,
+        "tables_json": _compact_tables_json(extraction_result.get("tables_json", {})),
+        "input_compaction": {
+            "enabled": True,
+            "char_budget": char_budget,
+            "notes": "Preserve key accounting lines (including audit/management/profit & loss wording) and trim noise for lower token usage.",
+        },
+    }
+    if combination_context:
+        payload["combination_context"] = combination_context
+    return payload
 
 
 def _load_renderer_module():
@@ -470,6 +538,8 @@ def _repair_common_json_issues(text: str) -> str:
     repaired = re.sub(r"([\{,]\s*)([A-Za-z_][A-Za-z0-9_]*)(\s*:)", r'\1"\2"\3', repaired)
     repaired = repaired.replace("'", '"')
     repaired = re.sub(r",\s*([}\]])", r"\1", repaired)
+    repaired = re.sub(r'([}\]"\d])\s*\n\s*("[A-Za-z_][A-Za-z0-9_]*"\s*:)', r'\1,\n\2', repaired)
+    repaired = re.sub(r'([}\]"\d])\s+("[A-Za-z_][A-Za-z0-9_]*"\s*:)', r'\1, \2', repaired)
     repaired = re.sub(r"\bTrue\b", "true", repaired)
     repaired = re.sub(r"\bFalse\b", "false", repaired)
     repaired = re.sub(r"\bNone\b", "null", repaired)
@@ -563,11 +633,11 @@ def _call_anthropic(system_prompt: str, user_content: str, corrective: bool = Fa
     client = Anthropic(api_key=anthropic_api_key)
     required_key_list = ", ".join(sorted(REQUIRED_TOP_LEVEL_KEYS))
     assistant_instruction = (
-        "Return ONLY valid JSON. No markdown fences, no explanations, no extra text. "
+        "Return ONLY valid minified JSON. No markdown fences, no explanations, no extra text. "
         f"The top-level object MUST contain these keys: {required_key_list}."
         if not corrective
         else (
-            "Your previous output was invalid. Return ONLY corrected valid JSON matching the required schema. "
+            "Your previous output was invalid. Return ONLY corrected valid minified JSON matching the required schema. "
             f"The top-level object MUST contain these keys: {required_key_list}."
         )
     )
@@ -591,6 +661,7 @@ def _call_anthropic(system_prompt: str, user_content: str, corrective: bool = Fa
                         "role": "user",
                         "content": (
                             f"{assistant_instruction}\n\n"
+                            "Important: Include terminology as found in source statements, including audit, management accounts, and profit and loss phrasing where applicable.\n\n"
                             "Transform this extracted financial data into KreditLab JSON format:\n\n"
                             f"FULL_TEXT_WITH_TABLES:\n{user_content}"
                         ),
@@ -628,12 +699,10 @@ def transform_to_kreditlab_json(
     combination_context: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     system_prompt = _load_system_prompt()
-    user_payload = {
-        "full_text_with_tables": extraction_result["full_text_with_tables"],
-        "tables_json": extraction_result.get("tables_json", {}),
-    }
-    if combination_context:
-        user_payload["combination_context"] = combination_context
+    user_payload = _prepare_stage2_payload(
+        extraction_result=extraction_result,
+        combination_context=combination_context,
+    )
     user_content = json.dumps(user_payload, ensure_ascii=False)
 
     response = _call_anthropic(system_prompt=system_prompt, user_content=user_content)
