@@ -58,7 +58,8 @@ Open `http://localhost:8000` for upload UI.
 - `POST /stage/transform`
   - body: `{"items": [{"filename": "...", "extraction_result": {...}}]}`
   - with one item: transforms to KreditLab JSON for that file
-  - with multiple items: combines all extraction payloads into one Claude request and returns one combined KreditLab JSON (`combined-report`)
+  - with multiple items: combines all extraction payloads into **one Claude request** and returns one combined KreditLab JSON (`combined-report`)
+  - each success result now includes `token_usage` with exact Anthropic token counts per attempt and a summary (`input_tokens`, `output_tokens`, `cache_*`, `total_tokens`)
 - `POST /stage/render`
   - body: `{"items": [{"filename": "...", "kreditlab_json": {...}}], "include_pdf": false}`
   - renders HTML (and optional PDF) per file
@@ -87,3 +88,8 @@ curl -X POST "http://localhost:8000/render/html" \
 - No API keys are hardcoded.
 - Secrets are read from environment variables only.
 - `.env` is gitignored for local development.
+
+## Token usage optimizations implemented
+- Stage 2 transform now avoids sending duplicate `tables_json` payload into Anthropic requests (keeps `full_text_with_tables` only), reducing input token volume.
+- Multi-file Stage 2 transform now uses a single Anthropic call for all files instead of one call per file, which lowers repeated instruction/prompt overhead.
+- API now returns exact Anthropic usage counters in `token_usage` so you can audit token consumption per transform run.
