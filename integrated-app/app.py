@@ -15,8 +15,8 @@ from pipeline import (
     extract_with_tensorlake,
     generate_full_html,
     process_pdf,
-    transform_to_kreditlab_json_with_usage,
-    transform_multiple_extractions_to_kreditlab_json_with_usage,
+    transform_to_kreditlab_json,
+    transform_multiple_extractions_to_kreditlab_json,
     merge_kreditlab_json_records,
 )
 
@@ -177,14 +177,13 @@ def stage_transform_endpoint(body: StageTransformRequest, _: None = Depends(requ
     if len(body.items) == 1:
         item = body.items[0]
         try:
-            transformed = transform_to_kreditlab_json_with_usage(item.extraction_result)
+            kreditlab_json = transform_to_kreditlab_json(item.extraction_result)
             return {
                 "results": [
                     {
                         "filename": item.filename,
                         "status": "success",
-                        "kreditlab_json": transformed["kreditlab_json"],
-                        "token_usage": transformed["usage"],
+                        "kreditlab_json": kreditlab_json,
                     }
                 ]
             }
@@ -200,7 +199,7 @@ def stage_transform_endpoint(body: StageTransformRequest, _: None = Depends(requ
             }
 
     try:
-        transformed = transform_multiple_extractions_to_kreditlab_json_with_usage(
+        combined_json = transform_multiple_extractions_to_kreditlab_json(
             [item.extraction_result for item in body.items],
             source_filenames=[item.filename for item in body.items],
         )
@@ -210,8 +209,7 @@ def stage_transform_endpoint(body: StageTransformRequest, _: None = Depends(requ
                     "filename": "combined-report",
                     "source_filenames": [item.filename for item in body.items],
                     "status": "success",
-                    "kreditlab_json": transformed["kreditlab_json"],
-                    "token_usage": transformed["usage"],
+                    "kreditlab_json": combined_json,
                 }
             ]
         }
