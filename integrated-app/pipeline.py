@@ -555,7 +555,7 @@ def _extract_schema_candidate(data: Dict[str, Any]) -> Dict[str, Any]:
     return data
 
 
-def _call_anthropic(system_prompt: str, user_content: str, corrective: bool = False) -> str:
+def _call_anthropic(system_prompt: str, user_content: str, corrective: bool = False) -> Tuple[str, Dict[str, int]]:
     anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not anthropic_api_key:
         raise RuntimeError("ANTHROPIC_API_KEY environment variable is required")
@@ -620,23 +620,67 @@ def _call_anthropic(system_prompt: str, user_content: str, corrective: bool = Fa
     for block in message.content:
         if getattr(block, "type", None) == "text":
             chunks.append(block.text)
-    return "\n".join(chunks).strip()
+
+    usage_raw = getattr(message, "usage", None)
+    usage = {
+        "input_tokens": int(getattr(usage_raw, "input_tokens", 0) or 0),
+        "output_tokens": int(getattr(usage_raw, "output_tokens", 0) or 0),
+        "cache_creation_input_tokens": int(getattr(usage_raw, "cache_creation_input_tokens", 0) or 0),
+        "cache_read_input_tokens": int(getattr(usage_raw, "cache_read_input_tokens", 0) or 0),
+    }
+    usage["total_tokens"] = usage["input_tokens"] + usage["output_tokens"]
+
+    return "\n".join(chunks).strip(), usage
+
+
+def _sum_usage(items: Iterable[Dict[str, int]]) -> Dict[str, int]:
+    summary = {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "total_tokens": 0,
+    }
+    for item in items:
+        for key in summary:
+            summary[key] += int(item.get(key, 0) or 0)
+    return summary
+
+
+def _build_transform_payload(
+    extraction_result: Dict[str, Any],
+    combination_context: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {
+        "full_text_with_tables": extraction_result["full_text_with_tables"],
+    }
+    if combination_context:
+        payload["combination_context"] = combination_context
+    return payload
 
 
 def transform_to_kreditlab_json(
     extraction_result: Dict[str, Any],
     combination_context: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
+    result = transform_to_kreditlab_json_with_usage(
+        extraction_result=extraction_result,
+        combination_context=combination_context,
+    )
+    return result["kreditlab_json"]
+
+
+def transform_to_kreditlab_json_with_usage(
+    extraction_result: Dict[str, Any],
+    combination_context: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     system_prompt = _load_system_prompt()
-    user_payload = {
-        "full_text_with_tables": extraction_result["full_text_with_tables"],
-        "tables_json": extraction_result.get("tables_json", {}),
-    }
-    if combination_context:
-        user_payload["combination_context"] = combination_context
+    user_payload = _build_transform_payload(extraction_result, combination_context=combination_context)
     user_content = json.dumps(user_payload, ensure_ascii=False)
 
-    response = _call_anthropic(system_prompt=system_prompt, user_content=user_content)
+    usage_by_attempt: list[Dict[str, int]] = []
+    response, call_usage = _call_anthropic(system_prompt=system_prompt, user_content=user_content)
+    usage_by_attempt.append(call_usage)
 
     parse_error: Optional[Exception] = None
     schema_error: Optional[str] = None
@@ -647,7 +691,13 @@ def transform_to_kreditlab_json(
             candidate = _extract_schema_candidate(parsed)
             valid, error = _validate_kreditlab_schema(candidate)
             if valid:
-                return _limit_to_latest_periods(candidate, max_periods=3)
+                return {
+                    "kreditlab_json": _limit_to_latest_periods(candidate, max_periods=3),
+                    "usage": {
+                        "by_attempt": usage_by_attempt,
+                        "summary": _sum_usage(usage_by_attempt),
+                    },
+                }
             schema_error = error
             LOGGER.warning("Anthropic schema validation failed on attempt %s: %s", attempt, error)
         except Exception as exc:
@@ -665,11 +715,13 @@ def transform_to_kreditlab_json(
             "SOURCE_DATA:\n"
             f"{user_content}"
         )
-        response = _call_anthropic(
+        response, call_usage = _call_anthropic(
             system_prompt=system_prompt,
             user_content=corrective_content,
             corrective=True,
         )
+        usage_by_attempt.append(call_usage)
+
 
     if parse_error is not None:
         raise RuntimeError(f"Claude response is not valid JSON after retries: {parse_error}") from parse_error
@@ -701,30 +753,90 @@ def transform_multiple_extractions_to_kreditlab_json(
     extraction_results: list[Dict[str, Any]],
     source_filenames: Optional[list[str]] = None,
 ) -> Dict[str, Any]:
+    result = transform_multiple_extractions_to_kreditlab_json_with_usage(
+        extraction_results=extraction_results,
+        source_filenames=source_filenames,
+    )
+    return result["kreditlab_json"]
+
+
+def transform_multiple_extractions_to_kreditlab_json_with_usage(
+    extraction_results: list[Dict[str, Any]],
+    source_filenames: Optional[list[str]] = None,
+) -> Dict[str, Any]:
     if not extraction_results:
         raise ValueError("At least one extraction result is required")
 
-    transformed_records: list[Dict[str, Any]] = []
+    combined_sources: list[Dict[str, Any]] = []
     for idx, extraction in enumerate(extraction_results):
-        filename = None
-        if source_filenames and idx < len(source_filenames):
-            filename = source_filenames[idx]
-
-        combination_context = {
-            "combine_documents": True,
+        source_payload: Dict[str, Any] = {
             "source_document_index": idx + 1,
             "total_source_documents": len(extraction_results),
-            "instruction": (
-                "This source document is part of a larger combined company dataset. "
-                "Generate ONE valid KreditLab JSON object for this source while strictly following "
-                "KreditLab_v7_9_updated instructions, schema, and numeric formatting."
-            ),
+            "source_payload": _build_transform_payload(extraction),
         }
-        if filename:
-            combination_context["source_filename"] = filename
+        if source_filenames and idx < len(source_filenames):
+            source_payload["source_filename"] = source_filenames[idx]
+        combined_sources.append(source_payload)
 
-        transformed_records.append(
-            transform_to_kreditlab_json(extraction, combination_context=combination_context)
+    merged_context = {
+        "combine_documents": True,
+        "instruction": (
+            "You are receiving multiple source documents for one company. "
+            "Create ONE merged KreditLab JSON object that consolidates all periods/documents "
+            "without losing material line-items. Return JSON only."
+        ),
+        "sources": combined_sources,
+    }
+
+    system_prompt = _load_system_prompt()
+    user_content = json.dumps(merged_context, ensure_ascii=False)
+
+    usage_by_attempt: list[Dict[str, int]] = []
+    response, call_usage = _call_anthropic(system_prompt=system_prompt, user_content=user_content)
+    usage_by_attempt.append(call_usage)
+
+    parse_error: Optional[Exception] = None
+    schema_error: Optional[str] = None
+
+    for attempt in range(1, 4):
+        try:
+            parsed = _extract_json_object(response)
+            candidate = _extract_schema_candidate(parsed)
+            valid, error = _validate_kreditlab_schema(candidate)
+            if valid:
+                return {
+                    "kreditlab_json": _limit_to_latest_periods(candidate, max_periods=3),
+                    "usage": {
+                        "by_attempt": usage_by_attempt,
+                        "summary": _sum_usage(usage_by_attempt),
+                    },
+                }
+            schema_error = error
+            LOGGER.warning("Anthropic schema validation failed on combined attempt %s: %s", attempt, error)
+        except Exception as exc:
+            parse_error = exc
+            LOGGER.warning("Failed to parse combined Anthropic response on attempt %s: %s", attempt, exc)
+
+        if attempt == 3:
+            break
+
+        corrective_content = (
+            "Your last output was invalid. Re-generate the complete merged JSON from source documents. "
+            "Return ONLY one valid JSON object with all required keys and no markdown fences.\n\n"
+            f"PARSE_ERROR: {parse_error}\n"
+            f"SCHEMA_ERROR: {schema_error}\n\n"
+            "SOURCE_DATA:\n"
+            f"{user_content}"
         )
+        response, call_usage = _call_anthropic(
+            system_prompt=system_prompt,
+            user_content=corrective_content,
+            corrective=True,
+        )
+        usage_by_attempt.append(call_usage)
 
-    return merge_kreditlab_json_records(transformed_records)
+    if parse_error is not None:
+        raise RuntimeError(f"Claude combined response is not valid JSON after retries: {parse_error}") from parse_error
+    if schema_error is not None:
+        raise RuntimeError(f"Claude combined response failed schema checks after retries: {schema_error}")
+    raise RuntimeError("Claude combined response was invalid after retries")
