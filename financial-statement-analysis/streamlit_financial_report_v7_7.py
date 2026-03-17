@@ -624,18 +624,6 @@ def format_number(value: Any, decimals: int = 0) -> str:
         return f"({formatted})" if num < 0 else formatted
     except: return str(value)
 
-def to_float_or_none(value: Any) -> Any:
-    """Convert value to float where possible, otherwise None."""
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-def is_numeric(value: Any) -> bool:
-    return to_float_or_none(value) is not None
-
 def format_number_or_dash(value: Any, decimals: int = 0) -> str:
     """Like format_number but returns dash for None - used for line items where missing period = not applicable"""
     if value is None: return "-"
@@ -2053,22 +2041,19 @@ def generate_ratios_section(data: Dict) -> str:
 def check_benchmark_status(value: float, benchmark: str, unit: str) -> str:
     """Check if a ratio value meets its benchmark and return appropriate CSS class"""
     try:
-        value_num = to_float_or_none(value)
-        if value_num is None:
-            return ""
         # Parse benchmark string like ">= 1.25x" or "<= 4.0x"
         if ">=" in benchmark:
             threshold = float(benchmark.replace(">=", "").replace("x", "").replace("%", "").strip())
-            return "benchmark-pass" if value_num >= threshold else "benchmark-fail"
+            return "benchmark-pass" if value >= threshold else "benchmark-fail"
         elif "<=" in benchmark:
             threshold = float(benchmark.replace("<=", "").replace("x", "").replace("%", "").strip())
-            return "benchmark-pass" if value_num <= threshold else "benchmark-fail"
+            return "benchmark-pass" if value <= threshold else "benchmark-fail"
         elif ">" in benchmark:
             threshold = float(benchmark.replace(">", "").replace("x", "").replace("%", "").strip())
-            return "benchmark-pass" if value_num > threshold else "benchmark-fail"
+            return "benchmark-pass" if value > threshold else "benchmark-fail"
         elif "<" in benchmark:
             threshold = float(benchmark.replace("<", "").replace("x", "").replace("%", "").strip())
-            return "benchmark-pass" if value_num < threshold else "benchmark-fail"
+            return "benchmark-pass" if value < threshold else "benchmark-fail"
     except (ValueError, TypeError):
         pass
     return ""
@@ -2098,10 +2083,9 @@ def generate_working_capital_section(data: Dict) -> str:
         cells = '<td class="indent-1">Current Assets - Current Liabilities</td>'
         nwc_values = nwc.get("values", {})
         for pk in period_keys:
-            val = nwc_values.get(pk, None)
-            val_num = to_float_or_none(val)
-            status_class = "positive" if (val_num is not None and val_num >= 0) else ("negative" if val_num is not None else "")
-            cells += f'<td class="number {status_class}">{format_number_or_dash(val)}</td>'
+            val = nwc_values.get(pk, 0)
+            status_class = "positive" if val >= 0 else "negative"
+            cells += f'<td class="number {status_class}">{format_number(val)}</td>'
         body += f'<tr class="total-row">{cells}</tr>'
     
     # Operating Working Capital
@@ -2111,10 +2095,9 @@ def generate_working_capital_section(data: Dict) -> str:
         cells = '<td class="indent-1">Trade Receivables + Inventory - Trade Payables</td>'
         owc_values = owc.get("values", {})
         for pk in period_keys:
-            val = owc_values.get(pk, None)
-            val_num = to_float_or_none(val)
-            status_class = "negative" if (val_num is not None and val_num > 0) else ("positive" if val_num is not None else "")
-            cells += f'<td class="number {status_class}">{format_number_or_dash(val)}</td>'
+            val = owc_values.get(pk, 0)
+            status_class = "negative" if val > 0 else "positive"
+            cells += f'<td class="number {status_class}">{format_number(val)}</td>'
         body += f'<tr class="total-row">{cells}</tr>'
         
         # v6.18: Show OWC components if available (trade_receivables, inventory, trade_payables)
@@ -2180,9 +2163,8 @@ def generate_working_capital_section(data: Dict) -> str:
                 ccc = calc_details.get(pk, {}).get("ccc_days", 0) if calc_details else 0
                 if not ccc and ccc_from_ratios:
                     ccc = ccc_from_ratios.get(pk, 0)
-                ccc_num = to_float_or_none(ccc)
-                ccc_class = "negative" if (ccc_num is not None and ccc_num > 0) else ("positive" if ccc_num is not None else "")
-                cells += f'<td class="number {ccc_class}">{format_number_or_dash(ccc, 0)} days</td>'
+                ccc_class = "negative" if ccc and float(ccc) > 0 else "positive"
+                cells += f'<td class="number {ccc_class}">{format_number(ccc, 0)} days</td>'
             body += f'<tr>{cells}</tr>'
             
             # v7.2: Show period-adjusted CCC if available
@@ -2212,10 +2194,9 @@ def generate_working_capital_section(data: Dict) -> str:
         wcr_label = "WC Requirement" if is_single_wcr else "WC Requirement (Standard)"
         cells = f'<td><strong>{wcr_label}</strong></td>'
         for pk in period_keys:
-            req = wcr_values_standard.get(pk, calc_details.get(pk, {}).get("wc_requirement", None) if calc_details else None)
-            req_num = to_float_or_none(req)
-            status_class = "negative" if (req_num is not None and req_num > 0) else ("positive" if req_num is not None else "")
-            cells += f'<td class="number {status_class}"><strong>{format_number_or_dash(req)}</strong></td>'
+            req = wcr_values_standard.get(pk, calc_details.get(pk, {}).get("wc_requirement", 0) if calc_details else 0)
+            status_class = "negative" if req > 0 else "positive"
+            cells += f'<td class="number {status_class}"><strong>{format_number(req)}</strong></td>'
         body += f'<tr class="grand-total-row">{cells}</tr>'
         
         # v7.2: Show period-adjusted WCR row if available and differs
@@ -2351,10 +2332,9 @@ def generate_funding_mismatch_section(data: Dict) -> str:
         
         cells = '<td><strong>Funding Gap</strong></td>'
         for pk in period_keys:
-            val = layer1.get(pk, {}).get("funding_gap", None)
-            val_num = to_float_or_none(val)
-            status_class = "negative" if (val_num is not None and val_num > 0) else ("positive" if val_num is not None else "")
-            cells += f'<td class="number {status_class}"><strong>{format_number_or_dash(val)}</strong></td>'
+            val = layer1.get(pk, {}).get("funding_gap", 0)
+            status_class = "negative" if val > 0 else "positive"
+            cells += f'<td class="number {status_class}"><strong>{format_number(val)}</strong></td>'
         body += f'<tr class="total-row">{cells}</tr>'
         
         cells = '<td class="indent-1">Gap % of NCA</td>'
@@ -2578,11 +2558,9 @@ def generate_dscr_section(data: Dict) -> str:
     body += f'<tr class="section-header-row"><td colspan="{len(period_keys)+1}">DSCR</td></tr>'
     cells = '<td><strong>DSCR</strong></td>'
     for pk in period_keys:
-        val = calc.get(pk, {}).get("dscr", None)
-        val_num = to_float_or_none(val)
-        val_class = "" if val_num is None else ("positive" if val_num >= 1.25 else ("warning" if val_num >= 1.0 else "negative"))
-        val_display = f"{format_number(val, 2)}x" if val_num is not None else "-"
-        cells += f'<td class="number {val_class}"><strong>{val_display}</strong></td>'
+        val = calc.get(pk, {}).get("dscr", 0)
+        val_class = "positive" if val >= 1.25 else ("warning" if val >= 1.0 else "negative")
+        cells += f'<td class="number {val_class}"><strong>{format_number(val, 2)}x</strong></td>'
     body += f'<tr class="grand-total-row">{cells}</tr>'
     
     notes = dscr.get("notes", "")
