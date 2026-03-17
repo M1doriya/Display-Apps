@@ -37,6 +37,17 @@ REQUIRED_TOP_LEVEL_KEYS = {
     "analysis_summary",
 }
 
+SUPPORTED_DOC_CLASSES = {
+    "audit_report",
+    "afs",
+    "balance_sheet",
+    "statement_of_financial_position",
+    "bank_statement",
+    "profit_and_loss",
+    "trading_account",
+    "other_supporting_document",
+}
+
 TOP_LEVEL_KEY_ALIASES = {
     "schema_info": "_schema_info",
     "income_statement": "statement_of_comprehensive_income",
@@ -131,6 +142,46 @@ def _prepare_stage2_payload(
     if combination_context:
         payload["combination_context"] = combination_context
     return payload
+
+
+def _classify_document(extraction_result: Dict[str, Any], filename: Optional[str]) -> str:
+    signal = " ".join(
+        [
+            str(filename or ""),
+            str(extraction_result.get("full_text_with_tables", ""))[:8000],
+        ]
+    ).lower()
+    if any(term in signal for term in ("audit report", "independent auditor", "audited", "afs")):
+        return "audit_report"
+    if any(term in signal for term in ("profit and loss", "statement of comprehensive income", "trading account", "revenue", "turnover")):
+        return "profit_and_loss"
+    if any(term in signal for term in ("balance sheet", "statement of financial position", "assets", "liabilities", "equity")):
+        return "balance_sheet"
+    if any(term in signal for term in ("bank statement", "transaction", "account balance", "bank charges")):
+        return "bank_statement"
+    return "other_supporting_document"
+
+
+def _extract_period_signals(extraction_result: Dict[str, Any], filename: Optional[str]) -> Dict[str, Any]:
+    signal = " ".join([str(filename or ""), str(extraction_result.get("full_text_with_tables", ""))[:12000]])
+    years = sorted(set(re.findall(r"\b(20\d{2})\b", signal)))
+    months = re.findall(r"\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b", signal, flags=re.IGNORECASE)
+    has_ytd = bool(re.search(r"\bytd\b|year\s*to\s*date", signal, flags=re.IGNORECASE))
+    return {
+        "years": years,
+        "months": [m.lower()[:3] for m in months[:10]],
+        "has_ytd": has_ytd,
+    }
+
+
+def _dominant_period_year(period_signals: list[Dict[str, Any]]) -> Optional[str]:
+    counts: Dict[str, int] = {}
+    for item in period_signals:
+        for year in item.get("years", []):
+            counts[year] = counts.get(year, 0) + 1
+    if not counts:
+        return None
+    return max(counts.items(), key=lambda kv: kv[1])[0]
 
 
 def _load_renderer_module():
@@ -553,7 +604,73 @@ def _validate_kreditlab_schema(data: Dict[str, Any]) -> Tuple[bool, Optional[str
     missing = sorted(REQUIRED_TOP_LEVEL_KEYS - set(data.keys()))
     if missing:
         return False, f"Missing required top-level keys: {', '.join(missing)}"
+    schema_info = data.get("_schema_info", {})
+    if not isinstance(schema_info, dict):
+        return False, "_schema_info must be an object"
+    if schema_info.get("version") != "v7.9":
+        return False, "_schema_info.version must be exactly 'v7.9'"
     return True, None
+
+
+def _ensure_case_data_quality_flags(record: Dict[str, Any]) -> Dict[str, Any]:
+    quality = record.setdefault("data_quality", {})
+    required_flags = {
+        "missing_required_inputs": [],
+        "period_mismatch": [],
+        "partially_extracted_document": [],
+        "synonym_mapped_fields": [],
+        "unknown_parameters_preserved": [],
+        "blocked_derived_metrics": [],
+        "report_consistency_issues": [],
+        "source_documents_used": [],
+        "source_documents_excluded": [],
+    }
+    for key, fallback in required_flags.items():
+        quality.setdefault(key, deepcopy(fallback))
+    return record
+
+
+def _enforce_v79(record: Dict[str, Any]) -> Dict[str, Any]:
+    schema_info = record.setdefault("_schema_info", {})
+    schema_info["version"] = "v7.9"
+    return record
+
+
+def _build_canonical_case_json(
+    transformed_records: list[Dict[str, Any]],
+    document_metadata: list[Dict[str, Any]],
+) -> Dict[str, Any]:
+    merged = merge_kreditlab_json_records(transformed_records)
+    merged = _enforce_v79(merged)
+    merged = _ensure_case_data_quality_flags(merged)
+
+    dominant_year = _dominant_period_year([item.get("period_signals", {}) for item in document_metadata])
+    used: list[Dict[str, Any]] = []
+    excluded: list[Dict[str, Any]] = []
+    period_mismatch: list[Dict[str, Any]] = []
+    for item in document_metadata:
+        years = item.get("period_signals", {}).get("years", [])
+        compatible = True if not dominant_year else (dominant_year in years or not years)
+        entry = {
+            "filename": item.get("filename"),
+            "document_class": item.get("document_class"),
+            "period_signals": item.get("period_signals", {}),
+        }
+        if compatible:
+            used.append(entry)
+        else:
+            excluded.append(entry)
+            period_mismatch.append(entry)
+
+    merged["case_metadata"] = {
+        "dominant_reporting_year": dominant_year,
+        "documents": document_metadata,
+    }
+    quality = merged["data_quality"]
+    quality["source_documents_used"] = used
+    quality["source_documents_excluded"] = excluded
+    quality["period_mismatch"] = period_mismatch
+    return merged
 
 
 def _normalize_top_level_aliases(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -750,6 +867,7 @@ def transform_to_kreditlab_json(
 def process_pdf(pdf_bytes: bytes, include_pdf: bool = False) -> Dict[str, Any]:
     extraction_result = extract_with_tensorlake(pdf_bytes)
     kreditlab_json = transform_to_kreditlab_json(extraction_result)
+    kreditlab_json = _enforce_v79(_ensure_case_data_quality_flags(kreditlab_json))
     html = generate_full_html(kreditlab_json)
 
     result: Dict[str, Any] = {
@@ -774,19 +892,36 @@ def transform_multiple_extractions_to_kreditlab_json(
         raise ValueError("At least one extraction result is required")
 
     transformed_records: list[Dict[str, Any]] = []
+    document_metadata: list[Dict[str, Any]] = []
     for idx, extraction in enumerate(extraction_results):
         filename = None
         if source_filenames and idx < len(source_filenames):
             filename = source_filenames[idx]
 
+        document_class = _classify_document(extraction, filename)
+        if document_class not in SUPPORTED_DOC_CLASSES:
+            document_class = "other_supporting_document"
+        period_signals = _extract_period_signals(extraction, filename)
+        document_metadata.append(
+            {
+                "source_document_index": idx + 1,
+                "filename": filename,
+                "document_class": document_class,
+                "period_signals": period_signals,
+            }
+        )
+
         combination_context = {
             "combine_documents": True,
             "source_document_index": idx + 1,
             "total_source_documents": len(extraction_results),
+            "document_class": document_class,
+            "period_signals": period_signals,
             "instruction": (
                 "This source document is part of a larger combined company dataset. "
                 "Generate ONE valid KreditLab JSON object for this source while strictly following "
-                "KreditLab_v7_9_updated instructions, schema, and numeric formatting."
+                "KreditLab_v7_9_updated instructions, schema, and numeric formatting. "
+                "Do not default missing numeric values to zero. Preserve unknown parameters and original labels."
             ),
         }
         if filename:
@@ -796,4 +931,4 @@ def transform_multiple_extractions_to_kreditlab_json(
             transform_to_kreditlab_json(extraction, combination_context=combination_context)
         )
 
-    return merge_kreditlab_json_records(transformed_records)
+    return _build_canonical_case_json(transformed_records, document_metadata)
