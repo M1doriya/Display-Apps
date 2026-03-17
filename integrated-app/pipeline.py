@@ -37,6 +37,69 @@ REQUIRED_TOP_LEVEL_KEYS = {
     "analysis_summary",
 }
 
+DOC_CLASS_KEYWORDS = {
+    "audit_report": (
+        "independent auditors",
+        "auditors' report",
+        "directors' report",
+        "financial statements",
+        "afs",
+        "audited",
+    ),
+    "balance_sheet": (
+        "statement of financial position",
+        "balance sheet",
+        "current assets",
+        "non-current assets",
+        "current liabilities",
+        "non-current liabilities",
+        "equity",
+    ),
+    "bank_statement": (
+        "bank statement",
+        "opening balance",
+        "closing balance",
+        "debit",
+        "credit",
+        "transaction date",
+    ),
+    "profit_and_loss": (
+        "profit and loss",
+        "statement of comprehensive income",
+        "income statement",
+        "revenue",
+        "cost of sales",
+        "gross profit",
+        "finance costs",
+        "net profit",
+        "trading account",
+        "turnover",
+    ),
+}
+
+DOC_PRECEDENCE = {
+    "audit_report": 0,
+    "balance_sheet": 1,
+    "profit_and_loss": 2,
+    "bank_statement": 3,
+    "other_supporting_document": 4,
+}
+
+MONTH_NAME_TO_NUM = {
+    "jan": 1,
+    "feb": 2,
+    "mar": 3,
+    "apr": 4,
+    "may": 5,
+    "jun": 6,
+    "jul": 7,
+    "aug": 8,
+    "sep": 9,
+    "oct": 10,
+    "nov": 11,
+    "dec": 12,
+}
+
 TOP_LEVEL_KEY_ALIASES = {
     "schema_info": "_schema_info",
     "income_statement": "statement_of_comprehensive_income",
@@ -58,6 +121,161 @@ def _load_system_prompt() -> str:
     return PROMPT_PATH.read_text(encoding="utf-8")
 
 
+
+
+def _classify_document_type(extraction_result: Dict[str, Any]) -> str:
+    text = str(extraction_result.get("full_text_with_tables", "")).lower()
+    scores: Dict[str, int] = {}
+
+    for doc_type, keywords in DOC_CLASS_KEYWORDS.items():
+        score = 0
+        for keyword in keywords:
+            if keyword in text:
+                score += 1
+        if score > 0:
+            scores[doc_type] = score
+
+    if not scores:
+        return "other_supporting_document"
+
+    return sorted(scores.items(), key=lambda kv: (-kv[1], DOC_PRECEDENCE.get(kv[0], 999)))[0][0]
+
+
+def _extract_date_signals(text: str) -> Dict[str, Any]:
+    if not text:
+        return {"years": [], "date_ranges": [], "month_year_labels": [], "financial_year_end": None}
+
+    years = sorted({int(year) for year in re.findall(r"\b(20\d{2})\b", text)})
+
+    date_ranges = []
+    for m in re.finditer(
+        r"(?i)\b(?:from\s+)?(\d{1,2}[/\-]\d{1,2}[/\-]20\d{2}|\d{1,2}\s+[A-Za-z]{3,9}\s+20\d{2})\s+(?:to|-)\s+(\d{1,2}[/\-]\d{1,2}[/\-]20\d{2}|\d{1,2}\s+[A-Za-z]{3,9}\s+20\d{2})\b",
+        text,
+    ):
+        date_ranges.append({"start": m.group(1), "end": m.group(2)})
+
+    month_year_labels = []
+    for m in re.finditer(r"(?i)\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+20\d{2}\b", text):
+        raw = m.group(0)
+        month_num = MONTH_NAME_TO_NUM[m.group(1).lower()[:3]]
+        year = int(re.search(r"20\d{2}", raw).group(0))
+        month_year_labels.append({"label": raw, "year": year, "month": month_num})
+
+    fye_match = re.search(
+        r"(?i)financial year (?:ended|end)\s*(?:on\s*)?(\d{1,2}\s+[A-Za-z]{3,9}\s+20\d{2}|\d{1,2}[/\-]\d{1,2}[/\-]20\d{2})",
+        text,
+    )
+    financial_year_end = fye_match.group(1) if fye_match else None
+
+    ytd_present = bool(re.search(r"(?i)\bytd\b|year[- ]to[- ]date", text))
+
+    return {
+        "years": years,
+        "date_ranges": date_ranges,
+        "month_year_labels": month_year_labels,
+        "financial_year_end": financial_year_end,
+        "has_ytd_marker": ytd_present,
+    }
+
+
+def _build_case_reconciliation_context(
+    extraction_results: list[Dict[str, Any]],
+    source_filenames: Optional[list[str]] = None,
+) -> Dict[str, Any]:
+    docs = []
+    year_counter: Dict[int, int] = {}
+
+    for idx, extraction in enumerate(extraction_results, start=1):
+        filename = source_filenames[idx - 1] if source_filenames and idx - 1 < len(source_filenames) else f"document_{idx}.pdf"
+        doc_type = _classify_document_type(extraction)
+        text = str(extraction.get("full_text_with_tables", ""))
+        signals = _extract_date_signals(text)
+        for year in signals.get("years", []):
+            year_counter[year] = year_counter.get(year, 0) + 1
+
+        docs.append(
+            {
+                "source_document_index": idx,
+                "source_filename": filename,
+                "document_class": doc_type,
+                "date_signals": signals,
+            }
+        )
+
+    dominant_year = max(year_counter.items(), key=lambda kv: kv[1])[0] if year_counter else None
+
+    for doc in docs:
+        years = set(doc.get("date_signals", {}).get("years", []))
+        doc["period_reconciliation_status"] = (
+            "matched"
+            if dominant_year is None or not years or dominant_year in years
+            else "mismatched"
+        )
+
+    return {
+        "combine_documents": True,
+        "total_source_documents": len(extraction_results),
+        "dominant_reporting_year": dominant_year,
+        "documents": docs,
+        "reconciliation_flags": [
+            {
+                "source_filename": d["source_filename"],
+                "document_class": d["document_class"],
+                "status": d["period_reconciliation_status"],
+            }
+            for d in docs
+            if d["period_reconciliation_status"] != "matched"
+        ],
+        "required_document_classes": [
+            "audit_report",
+            "balance_sheet",
+            "bank_statement",
+            "profit_and_loss",
+            "other_supporting_document",
+        ],
+        "source_authority_rules": {
+            "audit_report": "audited company info and statement structure",
+            "balance_sheet": "assets/liabilities/equity and funding structure",
+            "profit_and_loss": "revenue/cost/profitability and finance-cost structure",
+            "bank_statement": "bank movement and cash support evidence",
+        },
+        "field_mapping_policy": {
+            "synonym_aware": True,
+            "preserve_unknown_parameters": True,
+            "preserve_negative_values": True,
+            "avoid_double_counting": True,
+            "respect_section_context": True,
+        },
+    }
+
+
+def _apply_case_metadata(result: Dict[str, Any], case_context: Dict[str, Any]) -> Dict[str, Any]:
+    output = deepcopy(result)
+
+    schema_info = output.setdefault("_schema_info", {})
+    if isinstance(schema_info, dict):
+        schema_info["version"] = "v7.9"
+
+    notes = output.setdefault("notes", {})
+    if isinstance(notes, dict):
+        notes["source_documents"] = [
+            {
+                "filename": doc.get("source_filename"),
+                "document_class": doc.get("document_class"),
+                "period_reconciliation_status": doc.get("period_reconciliation_status"),
+            }
+            for doc in case_context.get("documents", [])
+        ]
+        notes["period_reconciliation"] = {
+            "dominant_reporting_year": case_context.get("dominant_reporting_year"),
+            "flags": case_context.get("reconciliation_flags", []),
+        }
+
+    company_info = output.setdefault("company_info", {})
+    if isinstance(company_info, dict):
+        company_info.setdefault("source_documents", notes.get("source_documents", []))
+
+    return output
 def _filter_relevant_lines(text: str, max_lines: int = 700) -> str:
     keywords = (
         "revenue",
@@ -553,6 +771,19 @@ def _validate_kreditlab_schema(data: Dict[str, Any]) -> Tuple[bool, Optional[str
     missing = sorted(REQUIRED_TOP_LEVEL_KEYS - set(data.keys()))
     if missing:
         return False, f"Missing required top-level keys: {', '.join(missing)}"
+
+    schema_info = data.get("_schema_info")
+    if not isinstance(schema_info, dict):
+        return False, "_schema_info must be an object"
+
+    version = str(schema_info.get("version", "")).strip()
+    if version and version != "v7.9":
+        return False, f"_schema_info.version must be v7.9, got '{version}'"
+
+    for key in ("company_info", "statement_of_comprehensive_income", "statement_of_financial_position", "analysis_summary"):
+        if not isinstance(data.get(key), dict):
+            return False, f"{key} must be an object"
+
     return True, None
 
 
@@ -773,27 +1004,26 @@ def transform_multiple_extractions_to_kreditlab_json(
     if not extraction_results:
         raise ValueError("At least one extraction result is required")
 
+    case_context = _build_case_reconciliation_context(extraction_results, source_filenames=source_filenames)
     transformed_records: list[Dict[str, Any]] = []
     for idx, extraction in enumerate(extraction_results):
-        filename = None
-        if source_filenames and idx < len(source_filenames):
-            filename = source_filenames[idx]
+        doc_context = case_context["documents"][idx] if idx < len(case_context.get("documents", [])) else {}
 
         combination_context = {
-            "combine_documents": True,
+            **case_context,
             "source_document_index": idx + 1,
-            "total_source_documents": len(extraction_results),
+            "current_document": doc_context,
             "instruction": (
                 "This source document is part of a larger combined company dataset. "
-                "Generate ONE valid KreditLab JSON object for this source while strictly following "
-                "KreditLab_v7_9_updated instructions, schema, and numeric formatting."
+                "Classify and extract every source independently, preserve line-item detail, preserve negative values, "
+                "apply synonym-aware mapping, and never suppress complementary balance-sheet or P&L fields from other sources. "
+                "Reconcile periods before merge, flag mismatches, and output KreditLab v7.9 compatible JSON only."
             ),
         }
-        if filename:
-            combination_context["source_filename"] = filename
 
         transformed_records.append(
             transform_to_kreditlab_json(extraction, combination_context=combination_context)
         )
 
-    return merge_kreditlab_json_records(transformed_records)
+    merged = merge_kreditlab_json_records(transformed_records)
+    return _apply_case_metadata(merged, case_context)
