@@ -37,6 +37,49 @@ REQUIRED_TOP_LEVEL_KEYS = {
     "analysis_summary",
 }
 
+SCHEMA_VERSION = "v7.9"
+
+DOCUMENT_TYPE_KEYWORDS: Dict[str, tuple[str, ...]] = {
+    "profit_and_loss": (
+        "profit and loss",
+        "statement of comprehensive income",
+        "statement of profit or loss",
+        "income statement",
+        "revenue",
+        "turnover",
+        "cost of sales",
+    ),
+    "balance_sheet": (
+        "balance sheet",
+        "statement of financial position",
+        "total assets",
+        "total liabilities",
+        "equity",
+    ),
+    "audit_report": (
+        "independent auditors",
+        "audit report",
+        "audited",
+        "opinion",
+        "basis for opinion",
+    ),
+    "bank_statement": (
+        "bank statement",
+        "bank balance",
+        "account number",
+        "ledger balance",
+    ),
+}
+
+SYNONYM_MAP: Dict[str, tuple[str, ...]] = {
+    "revenue": ("revenue", "sales", "turnover"),
+    "cost_of_sales": ("cost of sales", "cogs", "project cost"),
+    "receivables": ("receivables", "trade receivables", "debtors"),
+    "payables": ("payables", "trade payables", "creditors"),
+    "finance_cost": ("finance cost", "interest", "bank charges"),
+    "restricted_cash": ("restricted cash", "pledged deposits", "sinking fund"),
+}
+
 TOP_LEVEL_KEY_ALIASES = {
     "schema_info": "_schema_info",
     "income_statement": "statement_of_comprehensive_income",
@@ -131,6 +174,69 @@ def _prepare_stage2_payload(
     if combination_context:
         payload["combination_context"] = combination_context
     return payload
+
+
+def _extract_reporting_periods(text: str) -> list[str]:
+    periods: list[str] = []
+    if not text:
+        return periods
+
+    patterns = [
+        r"\b(?:31|30|29|28|[0-2]?\d)[/\-.](?:1[0-2]|0?\d)[/\-.](20\d{2})\b",
+        r"\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+20\d{2}\b",
+        r"\b(?:fy\s*)?20\d{2}\b",
+    ]
+    for pattern in patterns:
+        for match in re.findall(pattern, text, flags=re.IGNORECASE):
+            periods.append(match if isinstance(match, str) else " ".join(match).strip())
+
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for period in periods:
+        value = str(period).strip()
+        if not value:
+            continue
+        if value not in seen:
+            seen.add(value)
+            normalized.append(value)
+    return normalized
+
+
+def _classify_document(extraction_result: Dict[str, Any]) -> str:
+    text = str(extraction_result.get("full_text_with_tables", "")).lower()
+    best_type = "other_supporting_document"
+    best_score = 0
+    for doc_type, keywords in DOCUMENT_TYPE_KEYWORDS.items():
+        score = sum(1 for keyword in keywords if keyword in text)
+        if score > best_score:
+            best_score = score
+            best_type = doc_type
+    return best_type
+
+
+def _extract_unknown_parameters(tables_json: Dict[str, Any]) -> list[Dict[str, Any]]:
+    known_tokens = {token for values in SYNONYM_MAP.values() for token in values}
+    known_tokens.update({"total", "note", "year_2024", "year_2023", "year_2022"})
+    unknown: list[Dict[str, Any]] = []
+
+    for table in (tables_json or {}).get("tables", []):
+        for row in table.get("rows", []):
+            if not isinstance(row, dict):
+                continue
+            label = str(row.get("name", "")).strip()
+            if not label:
+                continue
+            lower = label.lower()
+            if any(token in lower for token in known_tokens):
+                continue
+            unknown.append(
+                {
+                    "label": label,
+                    "source_document": table.get("source_document"),
+                    "table_index": table.get("table_index"),
+                }
+            )
+    return unknown
 
 
 def _load_renderer_module():
@@ -553,6 +659,13 @@ def _validate_kreditlab_schema(data: Dict[str, Any]) -> Tuple[bool, Optional[str
     missing = sorted(REQUIRED_TOP_LEVEL_KEYS - set(data.keys()))
     if missing:
         return False, f"Missing required top-level keys: {', '.join(missing)}"
+
+    schema_info = data.get("_schema_info")
+    if not isinstance(schema_info, dict):
+        return False, "_schema_info must be an object"
+    if str(schema_info.get("version")) != SCHEMA_VERSION:
+        return False, f"_schema_info.version must be {SCHEMA_VERSION}"
+
     return True, None
 
 
@@ -623,6 +736,184 @@ def _extract_schema_candidate(data: Dict[str, Any]) -> Dict[str, Any]:
             stack.extend(current)
 
     return data
+
+
+def _derive_dominant_period(extraction_results: list[Dict[str, Any]]) -> Tuple[Optional[str], list[str]]:
+    all_periods: list[str] = []
+    for extraction in extraction_results:
+        all_periods.extend(_extract_reporting_periods(str(extraction.get("full_text_with_tables", ""))))
+    if not all_periods:
+        return None, []
+    counts: Dict[str, int] = {}
+    for period in all_periods:
+        counts[period] = counts.get(period, 0) + 1
+    dominant = sorted(counts.items(), key=lambda kv: (kv[1], kv[0]), reverse=True)[0][0]
+    unique = []
+    seen = set()
+    for period in all_periods:
+        if period not in seen:
+            seen.add(period)
+            unique.append(period)
+    return dominant, unique
+
+
+def _ensure_schema_version_v79(data: Dict[str, Any]) -> Dict[str, Any]:
+    schema_info = data.get("_schema_info")
+    if not isinstance(schema_info, dict):
+        schema_info = {}
+    schema_info["version"] = SCHEMA_VERSION
+    data["_schema_info"] = schema_info
+    return data
+
+
+def _get_or_create_data_quality_flags(data: Dict[str, Any]) -> Dict[str, Any]:
+    summary = data.setdefault("analysis_summary", {})
+    if not isinstance(summary, dict):
+        summary = {}
+        data["analysis_summary"] = summary
+    flags = summary.get("data_quality_flags")
+    if not isinstance(flags, dict):
+        flags = {}
+        summary["data_quality_flags"] = flags
+    return flags
+
+
+def _append_unique(lst: list[Any], value: Any) -> None:
+    if value not in lst:
+        lst.append(value)
+
+
+def _ensure_no_contradictory_narrative(data: Dict[str, Any]) -> None:
+    has_pnl = bool(data.get("statement_of_comprehensive_income"))
+    has_bs = bool(data.get("statement_of_financial_position"))
+    summary = data.get("analysis_summary", {})
+    if not isinstance(summary, dict):
+        return
+    issues = summary.get("report_consistency_issues")
+    if not isinstance(issues, list):
+        issues = []
+        summary["report_consistency_issues"] = issues
+
+    contradiction_terms = {
+        "p&l": has_pnl,
+        "profit and loss": has_pnl,
+        "balance sheet": has_bs,
+        "finance cost": _contains_finance_cost(data),
+    }
+
+    for key in ("notes", "observations", "recommendations", "executive_summary"):
+        value = summary.get(key)
+        if isinstance(value, str):
+            lower = value.lower()
+            for term, available in contradiction_terms.items():
+                if available and f"{term} missing" in lower:
+                    _append_unique(issues, f"Contradictory narrative removed: '{term} missing' while data exists")
+                    summary[key] = re.sub(fr"(?i){re.escape(term)}\s+missing", f"{term} available", value)
+        elif isinstance(value, list):
+            normalized = []
+            for item in value:
+                item_str = str(item)
+                lower = item_str.lower()
+                replaced = item_str
+                for term, available in contradiction_terms.items():
+                    if available and f"{term} missing" in lower:
+                        _append_unique(issues, f"Contradictory narrative removed: '{term} missing' while data exists")
+                        replaced = re.sub(fr"(?i){re.escape(term)}\s+missing", f"{term} available", replaced)
+                normalized.append(replaced)
+            summary[key] = normalized
+
+
+def _contains_finance_cost(data: Dict[str, Any]) -> bool:
+    text = json.dumps(data.get("statement_of_comprehensive_income", {}), ensure_ascii=False).lower()
+    for term in SYNONYM_MAP["finance_cost"]:
+        if term in text:
+            return True
+    return False
+
+
+def _enforce_missing_vs_zero(data: Dict[str, Any]) -> None:
+    flags = _get_or_create_data_quality_flags(data)
+    missing_required = flags.get("missing_required_inputs")
+    if not isinstance(missing_required, list):
+        missing_required = []
+        flags["missing_required_inputs"] = missing_required
+
+    blocked = flags.get("blocked_derived_metrics")
+    if not isinstance(blocked, list):
+        blocked = []
+        flags["blocked_derived_metrics"] = blocked
+
+    statements = {
+        "statement_of_comprehensive_income": data.get("statement_of_comprehensive_income"),
+        "statement_of_financial_position": data.get("statement_of_financial_position"),
+    }
+    for name, value in statements.items():
+        if not value:
+            _append_unique(missing_required, name)
+
+    if missing_required:
+        for metric in ("ratios", "dscr", "tnw", "funding_analysis", "working_capital"):
+            _append_unique(blocked, metric)
+
+
+def _attach_merge_metadata(
+    canonical_json: Dict[str, Any],
+    extraction_results: list[Dict[str, Any]],
+    source_filenames: Optional[list[str]],
+) -> Dict[str, Any]:
+    dominant_period, all_periods = _derive_dominant_period(extraction_results)
+    flags = _get_or_create_data_quality_flags(canonical_json)
+
+    synonym_hits = []
+    for canonical, variants in SYNONYM_MAP.items():
+        for extraction in extraction_results:
+            text = str(extraction.get("full_text_with_tables", "")).lower()
+            for variant in variants:
+                if variant in text:
+                    _append_unique(synonym_hits, {"canonical": canonical, "matched_label": variant})
+
+    unknown_params: list[Dict[str, Any]] = []
+    for extraction in extraction_results:
+        unknown_params.extend(_extract_unknown_parameters(extraction.get("tables_json", {})))
+
+    flags["synonym_mapped_fields"] = synonym_hits
+    flags["unknown_parameters_preserved"] = unknown_params
+    flags["period_mismatch"] = len(set(all_periods)) > 1
+    if len(set(all_periods)) > 1:
+        flags["period_mismatch_details"] = all_periods
+
+    case_meta = canonical_json.setdefault("_case_metadata", {})
+    if not isinstance(case_meta, dict):
+        case_meta = {}
+        canonical_json["_case_metadata"] = case_meta
+
+    documents = []
+    for idx, extraction in enumerate(extraction_results):
+        documents.append(
+            {
+                "source_document_index": idx + 1,
+                "filename": source_filenames[idx] if source_filenames and idx < len(source_filenames) else None,
+                "document_type": _classify_document(extraction),
+                "periods_detected": _extract_reporting_periods(str(extraction.get("full_text_with_tables", ""))),
+            }
+        )
+    case_meta["documents"] = documents
+    case_meta["dominant_period"] = dominant_period
+
+    return canonical_json
+
+
+def _post_process_canonical_json(
+    canonical_json: Dict[str, Any],
+    extraction_results: list[Dict[str, Any]],
+    source_filenames: Optional[list[str]],
+) -> Dict[str, Any]:
+    canonical = deepcopy(canonical_json)
+    canonical = _ensure_schema_version_v79(canonical)
+    canonical = _attach_merge_metadata(canonical, extraction_results, source_filenames)
+    _enforce_missing_vs_zero(canonical)
+    _ensure_no_contradictory_narrative(canonical)
+    return _limit_to_latest_periods(canonical, max_periods=3)
 
 
 def _call_anthropic(system_prompt: str, user_content: str, corrective: bool = False) -> str:
@@ -716,7 +1007,7 @@ def transform_to_kreditlab_json(
             candidate = _extract_schema_candidate(parsed)
             valid, error = _validate_kreditlab_schema(candidate)
             if valid:
-                return _limit_to_latest_periods(candidate, max_periods=3)
+                return _post_process_canonical_json(candidate, [extraction_result], source_filenames=None)
             schema_error = error
             LOGGER.warning("Anthropic schema validation failed on attempt %s: %s", attempt, error)
         except Exception as exc:
@@ -773,27 +1064,31 @@ def transform_multiple_extractions_to_kreditlab_json(
     if not extraction_results:
         raise ValueError("At least one extraction result is required")
 
-    transformed_records: list[Dict[str, Any]] = []
+    combined_extraction = _combine_extraction_results(extraction_results)
+    documents = []
     for idx, extraction in enumerate(extraction_results):
-        filename = None
-        if source_filenames and idx < len(source_filenames):
-            filename = source_filenames[idx]
-
-        combination_context = {
-            "combine_documents": True,
-            "source_document_index": idx + 1,
-            "total_source_documents": len(extraction_results),
-            "instruction": (
-                "This source document is part of a larger combined company dataset. "
-                "Generate ONE valid KreditLab JSON object for this source while strictly following "
-                "KreditLab_v7_9_updated instructions, schema, and numeric formatting."
-            ),
-        }
-        if filename:
-            combination_context["source_filename"] = filename
-
-        transformed_records.append(
-            transform_to_kreditlab_json(extraction, combination_context=combination_context)
+        documents.append(
+            {
+                "source_document_index": idx + 1,
+                "source_filename": source_filenames[idx] if source_filenames and idx < len(source_filenames) else None,
+                "document_type": _classify_document(extraction),
+                "periods_detected": _extract_reporting_periods(str(extraction.get("full_text_with_tables", ""))),
+            }
         )
 
-    return merge_kreditlab_json_records(transformed_records)
+    dominant_period, all_periods = _derive_dominant_period(extraction_results)
+    combination_context = {
+        "combine_documents": True,
+        "total_source_documents": len(extraction_results),
+        "instruction": (
+            "All source documents belong to ONE case. Build a single canonical KreditLab JSON object using all documents together. "
+            "Do not default missing values to 0. Preserve unknown labels and synonym mappings in metadata. "
+            "Enforce _schema_info.version=v7.9."
+        ),
+        "documents": documents,
+        "dominant_period": dominant_period,
+        "all_periods_detected": all_periods,
+    }
+
+    canonical_json = transform_to_kreditlab_json(combined_extraction, combination_context=combination_context)
+    return _post_process_canonical_json(canonical_json, extraction_results, source_filenames)

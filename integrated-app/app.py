@@ -114,22 +114,30 @@ async def process_pdfs_endpoint(
     if not files:
         raise HTTPException(status_code=400, detail="Please upload at least one PDF")
 
-    results = []
+    extraction_results = []
+    filenames = []
     for upload in files:
-        try:
-            result = await _process_single_upload(upload, include_pdf=include_pdf)
-            entry = {
-                "filename": upload.filename,
-                "kreditlab_json": result["kreditlab_json"],
-                "html": result["html"],
-            }
-            if include_pdf and result.get("pdf_bytes"):
-                entry["pdf_base64"] = base64.b64encode(result["pdf_bytes"]).decode("utf-8")
-            results.append(entry)
-        except HTTPException as exc:
-            results.append({"filename": upload.filename, "error": exc.detail})
+        payload = await _read_validated_pdf(upload)
+        extraction_results.append(extract_with_tensorlake(payload))
+        filenames.append(upload.filename)
 
-    return {"results": results}
+    combined_json = transform_multiple_extractions_to_kreditlab_json(extraction_results, source_filenames=filenames)
+    html = generate_full_html(combined_json)
+
+    result = {
+        "filename": "combined-report",
+        "source_filenames": filenames,
+        "kreditlab_json": combined_json,
+        "html": html,
+    }
+
+    if include_pdf:
+        try:
+            result["pdf_base64"] = base64.b64encode(convert_html_to_pdf(html)).decode("utf-8")
+        except Exception:
+            pass
+
+    return {"result": result}
 
 
 @app.post("/render/html")
