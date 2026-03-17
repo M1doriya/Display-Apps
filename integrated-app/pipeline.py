@@ -773,27 +773,19 @@ def transform_multiple_extractions_to_kreditlab_json(
     if not extraction_results:
         raise ValueError("At least one extraction result is required")
 
-    transformed_records: list[Dict[str, Any]] = []
-    for idx, extraction in enumerate(extraction_results):
-        filename = None
-        if source_filenames and idx < len(source_filenames):
-            filename = source_filenames[idx]
+    combined_extraction = _combine_extraction_results(extraction_results)
+    combination_context: Dict[str, Any] = {
+        "combine_documents": True,
+        "total_source_documents": len(extraction_results),
+        "instruction": (
+            "All uploaded files belong to ONE case and must be transformed into ONE canonical KreditLab JSON object "
+            "(schema version v7.9). Use all source documents together (do not prioritize only one file), "
+            "apply source authority rules, and never default missing values to zero. "
+            "If a label/parameter is not explicitly recognized, preserve it and map it to the closest relevant section "
+            "with the original label retained in metadata."
+        ),
+    }
+    if source_filenames:
+        combination_context["source_filenames"] = source_filenames
 
-        combination_context = {
-            "combine_documents": True,
-            "source_document_index": idx + 1,
-            "total_source_documents": len(extraction_results),
-            "instruction": (
-                "This source document is part of a larger combined company dataset. "
-                "Generate ONE valid KreditLab JSON object for this source while strictly following "
-                "KreditLab_v7_9_updated instructions, schema, and numeric formatting."
-            ),
-        }
-        if filename:
-            combination_context["source_filename"] = filename
-
-        transformed_records.append(
-            transform_to_kreditlab_json(extraction, combination_context=combination_context)
-        )
-
-    return merge_kreditlab_json_records(transformed_records)
+    return transform_to_kreditlab_json(combined_extraction, combination_context=combination_context)
