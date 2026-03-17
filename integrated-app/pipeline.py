@@ -215,7 +215,6 @@ def merge_kreditlab_json_records(records: list[Dict[str, Any]]) -> Dict[str, Any
     for record in records[1:]:
         merged = _merge_structure(merged, record)
 
-    merged = _enforce_management_period_year_consistency(merged)
     return _limit_to_latest_periods(merged, max_periods=3)
 
 
@@ -258,20 +257,6 @@ def _extract_period_sort_key(period_key: str, label: str) -> Tuple[int, int, int
     return (year, month, source_rank, period_key)
 
 
-def _extract_year_from_period(period_key: str, label: str) -> int:
-    raw = f"{period_key} {label}"
-    years = re.findall(r"(20\d{2})", raw)
-    return int(years[-1]) if years else 0
-
-
-def _is_management_period(period_key: str, label: str) -> bool:
-    lower_label = label.lower()
-    lower_key = period_key.lower()
-    if "audited" in lower_label:
-        return False
-    return any(token in lower_label for token in ("ma", "management", "unaudited", "ytd")) or lower_key.startswith("ytd")
-
-
 def _prune_period_keys(value: Any, keep_periods: set[str], all_periods: set[str]) -> Any:
     if isinstance(value, dict):
         pruned: Dict[str, Any] = {}
@@ -304,91 +289,6 @@ def _limit_to_latest_periods(record: Dict[str, Any], max_periods: int = 3) -> Di
     keep_set = set(keep_keys)
     all_set = set(periods.keys())
     return _prune_period_keys(trimmed, keep_set, all_set)
-
-
-def _enforce_management_period_year_consistency(record: Dict[str, Any]) -> Dict[str, Any]:
-    company = record.get("company_info", {})
-    periods = company.get("periods_analyzed", {})
-    if not isinstance(periods, dict) or not periods:
-        return record
-
-    management_keys_by_year: Dict[int, list[str]] = {}
-    for period_key, label in periods.items():
-        label_text = str(label)
-        if not _is_management_period(period_key, label_text):
-            continue
-        year = _extract_year_from_period(period_key, label_text)
-        if year == 0:
-            continue
-        management_keys_by_year.setdefault(year, []).append(period_key)
-
-    if len(management_keys_by_year) <= 1:
-        return record
-
-    target_year = sorted(
-        management_keys_by_year,
-        key=lambda year: (len(management_keys_by_year[year]), year),
-        reverse=True,
-    )[0]
-    keep_management_keys = set(management_keys_by_year[target_year])
-    drop_management_keys = {
-        period_key
-        for period_key, label in periods.items()
-        if _is_management_period(period_key, str(label)) and period_key not in keep_management_keys
-    }
-
-    if not drop_management_keys:
-        return record
-
-    trimmed = deepcopy(record)
-    trimmed_periods = {key: value for key, value in periods.items() if key not in drop_management_keys}
-    trimmed["company_info"]["periods_analyzed"] = trimmed_periods
-
-    keep_set = set(trimmed_periods.keys())
-    all_set = set(periods.keys())
-    return _prune_period_keys(trimmed, keep_set, all_set)
-
-
-def _infer_document_role(filename: str) -> str:
-    lower = filename.lower()
-    if any(token in lower for token in ("p&l", "profit", "income statement", "sci")):
-        return "statement_of_comprehensive_income"
-    if any(token in lower for token in ("bs", "balance sheet", "statement of financial position", "sfp", "bank statement")):
-        return "statement_of_financial_position"
-    if any(token in lower for token in ("afs", "audited", "audit", "financial statement")):
-        return "audited_financial_statements"
-    return "unknown"
-
-
-def _extract_filename_year_hint(filename: str) -> Optional[int]:
-    years = [int(match) for match in re.findall(r"(20\d{2})", filename)]
-    if years:
-        return years[-1]
-
-    short_years = [int(match) for match in re.findall(r"(?<!\d)(\d{2})(?!\d)", filename)]
-    for short_year in reversed(short_years):
-        if 0 <= short_year <= 79:
-            return 2000 + short_year
-    return None
-
-
-def _build_combination_period_hint(source_filenames: Optional[list[str]]) -> Dict[str, Any]:
-    if not source_filenames:
-        return {}
-
-    roles: list[Dict[str, Any]] = []
-    management_years: list[int] = []
-    for filename in source_filenames:
-        role = _infer_document_role(filename)
-        year_hint = _extract_filename_year_hint(filename)
-        roles.append({"filename": filename, "role": role, "year_hint": year_hint})
-        if role in {"statement_of_comprehensive_income", "statement_of_financial_position"} and year_hint:
-            management_years.append(year_hint)
-
-    hint: Dict[str, Any] = {"document_roles": roles}
-    if management_years:
-        hint["target_management_year"] = max(set(management_years), key=management_years.count)
-    return hint
 
 
 def _combine_extraction_results(extraction_results: list[Dict[str, Any]]) -> Dict[str, Any]:
@@ -874,7 +774,6 @@ def transform_multiple_extractions_to_kreditlab_json(
         raise ValueError("At least one extraction result is required")
 
     transformed_records: list[Dict[str, Any]] = []
-    period_hint = _build_combination_period_hint(source_filenames)
     for idx, extraction in enumerate(extraction_results):
         filename = None
         if source_filenames and idx < len(source_filenames):
@@ -887,15 +786,11 @@ def transform_multiple_extractions_to_kreditlab_json(
             "instruction": (
                 "This source document is part of a larger combined company dataset. "
                 "Generate ONE valid KreditLab JSON object for this source while strictly following "
-                "KreditLab_v7_9_updated instructions, schema, and numeric formatting. "
-                "If management-account periods exist across multiple uploaded sources, keep them aligned to the same reporting year."
+                "KreditLab_v7_9_updated instructions, schema, and numeric formatting."
             ),
         }
-        if period_hint:
-            combination_context["period_alignment_hint"] = period_hint
         if filename:
             combination_context["source_filename"] = filename
-            combination_context["source_document_role"] = _infer_document_role(filename)
 
         transformed_records.append(
             transform_to_kreditlab_json(extraction, combination_context=combination_context)
