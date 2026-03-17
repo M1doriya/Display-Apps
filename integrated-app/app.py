@@ -114,50 +114,22 @@ async def process_pdfs_endpoint(
     if not files:
         raise HTTPException(status_code=400, detail="Please upload at least one PDF")
 
-    extraction_results = []
-    source_filenames = []
-    file_statuses = []
+    results = []
     for upload in files:
         try:
-            payload = await _read_validated_pdf(upload)
-            extraction_result = extract_with_tensorlake(payload)
-            extraction_results.append(extraction_result)
-            source_filenames.append(upload.filename)
-            file_statuses.append({"filename": upload.filename, "status": "success"})
+            result = await _process_single_upload(upload, include_pdf=include_pdf)
+            entry = {
+                "filename": upload.filename,
+                "kreditlab_json": result["kreditlab_json"],
+                "html": result["html"],
+            }
+            if include_pdf and result.get("pdf_bytes"):
+                entry["pdf_base64"] = base64.b64encode(result["pdf_bytes"]).decode("utf-8")
+            results.append(entry)
         except HTTPException as exc:
-            file_statuses.append({"filename": upload.filename, "status": "error", "error": exc.detail})
-        except Exception as exc:
-            file_statuses.append({"filename": upload.filename, "status": "error", "error": f"Tensorlake failed: {exc}"})
+            results.append({"filename": upload.filename, "error": exc.detail})
 
-    if not extraction_results:
-        return {"file_statuses": file_statuses, "status": "error", "error": "No valid extractions available"}
-
-    try:
-        canonical_json = transform_multiple_extractions_to_kreditlab_json(
-            extraction_results,
-            source_filenames=source_filenames,
-        )
-        html = generate_full_html(canonical_json)
-        response = {
-            "status": "success",
-            "file_statuses": file_statuses,
-            "source_filenames": source_filenames,
-            "kreditlab_json": canonical_json,
-            "html": html,
-        }
-        if include_pdf:
-            try:
-                response["pdf_base64"] = base64.b64encode(convert_html_to_pdf(html)).decode("utf-8")
-            except Exception:
-                pass
-        return response
-    except Exception as exc:
-        return {
-            "status": "error",
-            "file_statuses": file_statuses,
-            "source_filenames": source_filenames,
-            "error": f"Combined pipeline failed: {exc}",
-        }
+    return {"results": results}
 
 
 @app.post("/render/html")
