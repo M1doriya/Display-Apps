@@ -48,6 +48,27 @@ SUPPORTED_DOC_CLASSES = {
     "other_supporting_document",
 }
 
+
+
+DOC_SOURCE_AUTHORITY = {
+    "audit_report": 5,
+    "afs": 5,
+    "balance_sheet": 4,
+    "statement_of_financial_position": 4,
+    "profit_and_loss": 4,
+    "trading_account": 4,
+    "bank_statement": 2,
+    "other_supporting_document": 1,
+}
+
+SYNONYM_FAMILIES = {
+    "revenue": ["sales", "turnover", "operating income", "total income"],
+    "cost_of_sales": ["cost of goods sold", "direct cost", "project cost", "cost of revenue"],
+    "receivables": ["debtors", "trade receivables", "accounts receivable"],
+    "payables": ["creditors", "trade payables", "accounts payable"],
+    "finance_cost": ["interest expense", "borrowing cost", "bank charges", "finance charges"],
+    "restricted_cash": ["pledged deposits", "sinking fund", "reserved bank", "collateral balances"],
+}
 TOP_LEVEL_KEY_ALIASES = {
     "schema_info": "_schema_info",
     "income_statement": "statement_of_comprehensive_income",
@@ -640,15 +661,13 @@ def _build_canonical_case_json(
     transformed_records: list[Dict[str, Any]],
     document_metadata: list[Dict[str, Any]],
 ) -> Dict[str, Any]:
-    merged = merge_kreditlab_json_records(transformed_records)
-    merged = _enforce_v79(merged)
-    merged = _ensure_case_data_quality_flags(merged)
-
     dominant_year = _dominant_period_year([item.get("period_signals", {}) for item in document_metadata])
     used: list[Dict[str, Any]] = []
     excluded: list[Dict[str, Any]] = []
     period_mismatch: list[Dict[str, Any]] = []
-    for item in document_metadata:
+    compatible_records: list[Dict[str, Any]] = []
+
+    for record, item in zip(transformed_records, document_metadata):
         years = item.get("period_signals", {}).get("years", [])
         compatible = True if not dominant_year else (dominant_year in years or not years)
         entry = {
@@ -658,18 +677,41 @@ def _build_canonical_case_json(
         }
         if compatible:
             used.append(entry)
+            compatible_records.append(record)
         else:
             excluded.append(entry)
             period_mismatch.append(entry)
 
+    if not compatible_records:
+        compatible_records = transformed_records
+
+    # Merge stronger sources first so weaker sources cannot overwrite populated values.
+    compatible_pairs = []
+    for record, item in zip(transformed_records, document_metadata):
+        if any(item.get("filename") == u.get("filename") for u in used):
+            compatible_pairs.append((record, item))
+    ordered = sorted(
+        compatible_pairs,
+        key=lambda pair: DOC_SOURCE_AUTHORITY.get(pair[1].get("document_class", "other_supporting_document"), 0),
+        reverse=True,
+    )
+    merge_input = [rec for rec, _ in ordered] if ordered else compatible_records
+
+    merged = merge_kreditlab_json_records(merge_input)
+    merged = _enforce_v79(merged)
+    merged = _ensure_case_data_quality_flags(merged)
+
     merged["case_metadata"] = {
         "dominant_reporting_year": dominant_year,
         "documents": document_metadata,
+        "synonym_families": SYNONYM_FAMILIES,
     }
     quality = merged["data_quality"]
     quality["source_documents_used"] = used
     quality["source_documents_excluded"] = excluded
     quality["period_mismatch"] = period_mismatch
+    if excluded:
+        quality["report_consistency_issues"].append("One or more documents were excluded due to period mismatch.")
     return merged
 
 
@@ -917,6 +959,7 @@ def transform_multiple_extractions_to_kreditlab_json(
             "total_source_documents": len(extraction_results),
             "document_class": document_class,
             "period_signals": period_signals,
+            "synonym_families": SYNONYM_FAMILIES,
             "instruction": (
                 "This source document is part of a larger combined company dataset. "
                 "Generate ONE valid KreditLab JSON object for this source while strictly following "

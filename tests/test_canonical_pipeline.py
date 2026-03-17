@@ -41,7 +41,11 @@ def test_schema_enforces_v79_only():
 
 
 def test_canonical_case_has_quality_flags_and_period_reconciliation():
-    records = [minimal_payload("v7.9"), minimal_payload("v7.9")]
+    recent = minimal_payload("v7.9")
+    recent["analysis_summary"] = {"chosen": "recent"}
+    old = minimal_payload("v7.9")
+    old["analysis_summary"] = {"chosen": "old"}
+    records = [recent, old]
     metadata = [
         {
             "filename": "pl.pdf",
@@ -59,6 +63,7 @@ def test_canonical_case_has_quality_flags_and_period_reconciliation():
     assert merged["data_quality"]["source_documents_used"][0]["filename"] == "pl.pdf"
     assert merged["data_quality"]["source_documents_excluded"][0]["filename"] == "old-bs.pdf"
     assert merged["data_quality"]["period_mismatch"][0]["filename"] == "old-bs.pdf"
+    assert merged["analysis_summary"] == {"chosen": "recent"}
 
 
 def test_transform_multiple_builds_one_case(monkeypatch):
@@ -111,3 +116,18 @@ def test_process_pdfs_keeps_partial_success(monkeypatch):
     assert body["status"] == "success"
     assert any(item["status"] == "error" for item in body["file_statuses"])
     assert body["kreditlab_json"]["_schema_info"]["version"] == "v7.9"
+
+
+def test_source_authority_ordering_prefers_audit_for_overlap():
+    audit = minimal_payload("v7.9")
+    audit["company_info"]["legal_name"] = "Audit Name"
+    pl = minimal_payload("v7.9")
+    pl["company_info"]["legal_name"] = "PL Name"
+    merged = pipeline._build_canonical_case_json(
+        [pl, audit],
+        [
+            {"filename": "pl.pdf", "document_class": "profit_and_loss", "period_signals": {"years": ["2024"]}},
+            {"filename": "audit.pdf", "document_class": "audit_report", "period_signals": {"years": ["2024"]}},
+        ],
+    )
+    assert merged["company_info"]["legal_name"] == "Audit Name"
