@@ -114,22 +114,51 @@ async def process_pdfs_endpoint(
     if not files:
         raise HTTPException(status_code=400, detail="Please upload at least one PDF")
 
-    results = []
+    extraction_results = []
+    source_filenames = []
+    file_errors = []
+
     for upload in files:
         try:
-            result = await _process_single_upload(upload, include_pdf=include_pdf)
-            entry = {
-                "filename": upload.filename,
-                "kreditlab_json": result["kreditlab_json"],
-                "html": result["html"],
-            }
-            if include_pdf and result.get("pdf_bytes"):
-                entry["pdf_base64"] = base64.b64encode(result["pdf_bytes"]).decode("utf-8")
-            results.append(entry)
+            payload = await _read_validated_pdf(upload)
+            extraction_results.append(extract_with_tensorlake(payload))
+            source_filenames.append(upload.filename)
         except HTTPException as exc:
-            results.append({"filename": upload.filename, "error": exc.detail})
+            file_errors.append({"filename": upload.filename, "status": "error", "error": exc.detail})
+        except Exception as exc:
+            file_errors.append({"filename": upload.filename, "status": "error", "error": f"Tensorlake failed: {exc}"})
 
-    return {"results": results}
+    if not extraction_results:
+        raise HTTPException(status_code=400, detail={"message": "No valid PDFs were processed", "file_errors": file_errors})
+
+    try:
+        combined_json = transform_multiple_extractions_to_kreditlab_json(
+            extraction_results,
+            source_filenames=source_filenames,
+        )
+        html = generate_full_html(combined_json)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Combined pipeline failed: {exc}") from exc
+
+    response = {
+        "result": {
+            "filename": "combined-report",
+            "source_filenames": source_filenames,
+            "status": "success",
+            "kreditlab_json": combined_json,
+            "html": html,
+        }
+    }
+    if include_pdf:
+        try:
+            response["result"]["pdf_base64"] = base64.b64encode(convert_html_to_pdf(html)).decode("utf-8")
+        except Exception:
+            pass
+
+    if file_errors:
+        response["file_errors"] = file_errors
+
+    return response
 
 
 @app.post("/render/html")
