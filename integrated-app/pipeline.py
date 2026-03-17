@@ -37,41 +37,6 @@ REQUIRED_TOP_LEVEL_KEYS = {
     "analysis_summary",
 }
 
-SUPPORTED_DOCUMENT_CLASSES = {"audit_report", "bank_statement", "profit_and_loss", "unknown"}
-
-DOCUMENT_TYPE_PATTERNS = {
-    "audit_report": [
-        "audited financial",
-        "independent auditors",
-        "statement of financial position",
-        "statement of comprehensive income",
-        "directors' report",
-        "afs",
-    ],
-    "bank_statement": [
-        "bank statement",
-        "closing balance",
-        "opening balance",
-        "transaction date",
-        "deposit",
-        "withdrawal",
-    ],
-    "profit_and_loss": [
-        "profit and loss",
-        "profit & loss",
-        "statement of profit",
-        "p&l",
-        "gross profit",
-    ],
-}
-
-SCHEMA_REQUIRED_NESTED_KEYS = {
-    "_schema_info": {"version", "generated_by", "generation_date", "currency_unit", "analysis_basis"},
-    "company_info": {"name", "financial_year_end", "periods_analyzed"},
-    "statement_of_comprehensive_income": {"revenue", "net_profit_after_tax"},
-    "statement_of_financial_position": {"total_assets", "total_liabilities", "total_equity_and_liabilities"},
-}
-
 TOP_LEVEL_KEY_ALIASES = {
     "schema_info": "_schema_info",
     "income_statement": "statement_of_comprehensive_income",
@@ -325,141 +290,6 @@ def _limit_to_latest_periods(record: Dict[str, Any], max_periods: int = 3) -> Di
     all_set = set(periods.keys())
     return _prune_period_keys(trimmed, keep_set, all_set)
 
-
-
-
-def _classify_document_type(text: str, filename: Optional[str] = None) -> str:
-    corpus = f"{filename or ''}\n{text}".lower()
-    scores: Dict[str, int] = {}
-    for document_type, patterns in DOCUMENT_TYPE_PATTERNS.items():
-        scores[document_type] = sum(1 for pattern in patterns if pattern in corpus)
-
-    best_type = max(scores.items(), key=lambda item: item[1])[0]
-    if scores.get(best_type, 0) <= 0:
-        return "unknown"
-    return best_type
-
-
-def _extract_date_signals(text: str) -> Dict[str, Any]:
-    lower = text.lower()
-    year_matches = [int(year) for year in re.findall(r"\b(20\d{2})\b", text)]
-
-    month_regex = (
-        r"\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|"
-        r"jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b"
-    )
-    month_year_pairs = []
-    for match in re.finditer(rf"{month_regex}\s*(20\d{{2}})", lower, re.IGNORECASE):
-        month_year_pairs.append(f"{match.group(1).title()} {match.group(2)}")
-
-    coverage_ranges = []
-    for match in re.finditer(rf"from\s+(.{{0,24}}?{month_regex}.{{0,8}}20\d{{2}})\s+to\s+(.{{0,24}}?{month_regex}.{{0,8}}20\d{{2}})", lower, re.IGNORECASE):
-        coverage_ranges.append({"from": match.group(1).strip(), "to": match.group(2).strip()})
-
-    fy_end_match = re.search(r"(?:financial year end|year ended|as at)\s*(\d{1,2}\s+[A-Za-z]+)", text, re.IGNORECASE)
-
-    return {
-        "years_detected": sorted(set(year_matches)),
-        "statement_month_year": month_year_pairs[:6],
-        "coverage_dates": coverage_ranges[:4],
-        "financial_year_end": fy_end_match.group(1) if fy_end_match else None,
-    }
-
-
-def _document_authority(document_type: str) -> int:
-    if document_type == "audit_report":
-        return 3
-    if document_type == "profit_and_loss":
-        return 2
-    if document_type == "bank_statement":
-        return 1
-    return 0
-
-
-def _infer_primary_reporting_period(documents: list[Dict[str, Any]]) -> Dict[str, Any]:
-    year_counts: Dict[int, int] = {}
-    for doc in documents:
-        for year in doc.get("date_signals", {}).get("years_detected", []):
-            year_counts[year] = year_counts.get(year, 0) + 1
-
-    dominant_year = max(year_counts.items(), key=lambda item: item[1])[0] if year_counts else None
-
-    mismatches = []
-    for doc in documents:
-        years = doc.get("date_signals", {}).get("years_detected", [])
-        if dominant_year and years and dominant_year not in years:
-            mismatches.append(
-                {
-                    "source_document_index": doc["source_document_index"],
-                    "filename": doc.get("filename"),
-                    "document_type": doc.get("document_type"),
-                    "years_detected": years,
-                    "reason": f"Dominant year is {dominant_year}, but this document does not include it.",
-                }
-            )
-
-    return {
-        "primary_year": dominant_year,
-        "year_counts": year_counts,
-        "mismatches": mismatches,
-    }
-
-
-def build_multi_document_context(
-    extraction_results: list[Dict[str, Any]],
-    source_filenames: Optional[list[str]] = None,
-) -> Dict[str, Any]:
-    documents: list[Dict[str, Any]] = []
-    for idx, extraction in enumerate(extraction_results):
-        text = extraction.get("full_text_with_tables", "")
-        filename = source_filenames[idx] if source_filenames and idx < len(source_filenames) else None
-        document_type = _classify_document_type(text, filename)
-        if document_type not in SUPPORTED_DOCUMENT_CLASSES:
-            document_type = "unknown"
-
-        documents.append(
-            {
-                "source_document_index": idx + 1,
-                "filename": filename,
-                "document_type": document_type,
-                "authority_rank": _document_authority(document_type),
-                "date_signals": _extract_date_signals(text),
-            }
-        )
-
-    period_context = _infer_primary_reporting_period(documents)
-
-    return {
-        "documents": documents,
-        "primary_reporting_period": period_context,
-        "supported_document_classes": sorted(SUPPORTED_DOCUMENT_CLASSES),
-        "merging_rules": {
-            "iterate_all_documents": True,
-            "never_short_circuit_on_first_document_type": True,
-            "preserve_secondary_values": True,
-            "authoritative_source_priority": ["audit_report", "profit_and_loss", "bank_statement", "unknown"],
-        },
-    }
-
-
-def _sort_extractions_by_authority(
-    extraction_results: list[Dict[str, Any]],
-    multi_document_context: Dict[str, Any],
-) -> list[tuple[int, Dict[str, Any], Dict[str, Any]]]:
-    doc_meta = {
-        item.get("source_document_index"): item
-        for item in multi_document_context.get("documents", [])
-        if isinstance(item, dict)
-    }
-
-    ordered = []
-    for idx, extraction in enumerate(extraction_results):
-        source_index = idx + 1
-        meta = doc_meta.get(source_index, {"source_document_index": source_index, "document_type": "unknown", "authority_rank": 0})
-        ordered.append((idx, extraction, meta))
-
-    ordered.sort(key=lambda item: int(item[2].get("authority_rank", 0)), reverse=True)
-    return ordered
 
 def _combine_extraction_results(extraction_results: list[Dict[str, Any]]) -> Dict[str, Any]:
     if not extraction_results:
@@ -723,20 +553,6 @@ def _validate_kreditlab_schema(data: Dict[str, Any]) -> Tuple[bool, Optional[str
     missing = sorted(REQUIRED_TOP_LEVEL_KEYS - set(data.keys()))
     if missing:
         return False, f"Missing required top-level keys: {', '.join(missing)}"
-
-    for parent_key, required_nested in SCHEMA_REQUIRED_NESTED_KEYS.items():
-        parent = data.get(parent_key)
-        if not isinstance(parent, dict):
-            return False, f"Key '{parent_key}' must be an object"
-        missing_nested = sorted(required_nested - set(parent.keys()))
-        if missing_nested:
-            return False, f"Key '{parent_key}' missing required nested keys: {', '.join(missing_nested)}"
-
-    schema_info = data.get("_schema_info", {})
-    version = str(schema_info.get("version", "")).strip().lower()
-    if version and version != "v7.9":
-        return False, "_schema_info.version must be v7.9"
-
     return True, None
 
 
@@ -957,32 +773,20 @@ def transform_multiple_extractions_to_kreditlab_json(
     if not extraction_results:
         raise ValueError("At least one extraction result is required")
 
-    multi_document_context = build_multi_document_context(
-        extraction_results=extraction_results,
-        source_filenames=source_filenames,
-    )
-
     transformed_records: list[Dict[str, Any]] = []
-    ordered_items = _sort_extractions_by_authority(extraction_results, multi_document_context)
-
-    for original_idx, extraction, document_meta in ordered_items:
+    for idx, extraction in enumerate(extraction_results):
         filename = None
-        if source_filenames and original_idx < len(source_filenames):
-            filename = source_filenames[original_idx]
+        if source_filenames and idx < len(source_filenames):
+            filename = source_filenames[idx]
 
         combination_context = {
             "combine_documents": True,
-            "source_document_index": original_idx + 1,
+            "source_document_index": idx + 1,
             "total_source_documents": len(extraction_results),
-            "source_document_type": document_meta.get("document_type", "unknown"),
-            "source_document_date_signals": document_meta.get("date_signals", {}),
-            "multi_document_context": multi_document_context,
             "instruction": (
                 "This source document is part of a larger combined company dataset. "
                 "Generate ONE valid KreditLab JSON object for this source while strictly following "
-                "KreditLab_v7_9_updated instructions, schema, and numeric formatting. "
-                "Do NOT ignore profit_and_loss when bank_statement exists. Preserve additional line items "
-                "under nearest semantically valid existing groups in schema."
+                "KreditLab_v7_9_updated instructions, schema, and numeric formatting."
             ),
         }
         if filename:
@@ -992,19 +796,4 @@ def transform_multiple_extractions_to_kreditlab_json(
             transform_to_kreditlab_json(extraction, combination_context=combination_context)
         )
 
-    merged = merge_kreditlab_json_records(transformed_records)
-    merged.setdefault("analysis_summary", {})
-    merged["analysis_summary"].setdefault("data_quality_flags", {})
-    merged["analysis_summary"]["data_quality_flags"]["multi_document_context"] = {
-        "primary_reporting_period": multi_document_context.get("primary_reporting_period", {}),
-        "documents_processed": [
-            {
-                "source_document_index": doc.get("source_document_index"),
-                "filename": doc.get("filename"),
-                "document_type": doc.get("document_type"),
-            }
-            for doc in multi_document_context.get("documents", [])
-        ],
-    }
-
-    return merged
+    return merge_kreditlab_json_records(transformed_records)
